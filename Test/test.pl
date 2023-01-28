@@ -1,5 +1,4 @@
-use ETL::Wrap; use Log::Log4perl qw(get_logger);
-use Data::Dumper;
+use ETL::Wrap; use Data::Dumper;
 
 %common = (
 	FTP => {
@@ -47,7 +46,7 @@ use Data::Dumper;
 				skip => 2,
 				header => "Registerkonto	InhaberNummer	Name	Kapital",
 			},
-			firstLineProc => 'my ($repyear,$repmonth,$repday)=/Kundenreport per (\d{4})-(\d{2})-(\d{2})/i; $loads[0]{ReferenceDate} = sprintf("%04d%02d%02d",$repyear,$repmonth,$repday);',
+			firstLineProc => 'my ($repyear,$repmonth,$repday)=/Kundenreport per (\d{4})-(\d{2})-(\d{2})/i; $main::loads[0]{ReferenceDate} = sprintf("%04d%02d%02d",$repyear,$repmonth,$repday);',
 		}
 	},
 	{
@@ -65,7 +64,7 @@ use Data::Dumper;
 				skip => 2,
 				header => "Registerkonto	InhaberNummer	Name	Kapital",
 			},
-			firstLineProc => 'my ($repyear,$repmonth,$repday)=/Kundenreport per (\d{4})-(\d{2})-(\d{2})/i;$loads[0]{ReferenceDate} = sprintf("%04d%02d%02d",$repyear,$repmonth,$repday);',
+			firstLineProc => 'my ($repyear,$repmonth,$repday)=/Kundenreport per (\d{4})-(\d{2})-(\d{2})/i; $main::loads[0]{ReferenceDate} = sprintf("%04d%02d%02d",$repyear,$repmonth,$repday);',
 		}
 	},
 );
@@ -75,7 +74,7 @@ $loads[0]{File}{lineCode} = <<'END';
 	my %linkedKapital;
 	$linkedKapital{"Registerkonto"} = $line{"Registerkonto"};
 	$linkedKapital{"InhaberNummer"} = $line{"InhaberNummer"};
-	$linkedKapital{"StichDatum"} = $loads[0]{ReferenceDate};
+	$linkedKapital{"StichDatum"} = $main::loads[0]{ReferenceDate};
 	$linkedKapital{"Kapitalstand"} = $line{"Kapital"};
 	push @{$loads[0]{linkedKapital}}, \%linkedKapital;
 END

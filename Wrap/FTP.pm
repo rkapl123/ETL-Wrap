@@ -1,10 +1,14 @@
 package ETL::Wrap::FTP;
 
-use strict; 
-use Log::Log4perl qw(get_logger); use File::Temp;
-use Net::SFTP::Foreign; use Data::Dumper; use Net::SFTP::Foreign::Constants qw( SFTP_ERR_LOCAL_UTIME_FAILED );use Fcntl ':mode';use Time::Local; use Time::localtime; use Exporter;
-use ETL::Wrap::DateUtil;# use ETL::Wrap::Common;
-use Win32::ShellQuote qw(:all); # for ugly passwords that contain <#|>% .
+use strict;
+use Net::SFTP::Foreign; use Net::SFTP::Foreign::Constants qw( SFTP_ERR_LOCAL_UTIME_FAILED ); 
+use Fcntl ':mode'; # for S_ISREG check in removeFilesOlderX
+use Log::Log4perl qw(get_logger); use File::Temp; use Time::Local; use Time::localtime; use Exporter; use Data::Dumper;
+use ETL::Wrap::DateUtil;
+# for passwords that contain <#|>% we have to use shell quoting on windows (special "use" to make this optional on non-win environments)
+BEGIN {
+	if ($^O =~ /MSWin/) {require Win32::ShellQuote; Win32::ShellQuote->import();}
+}
 
 our @ISA = qw(Exporter);
 our @EXPORT = qw(removeFilesOlderX fetchFiles writeFiles moveTempFiles archiveFiles login);
@@ -57,7 +61,7 @@ sub getFiles {
 	my $logger = get_logger();
 	my $suppressGetError = $execute->{firstRunSuccess};
 	my $queue_size = $FTP->{queue_size};
-	$queue_size = 1 if !$queue_size; # queue_size bigger 1 causes oft connection issues
+	$queue_size = 1 if !$queue_size; # queue_size bigger 1 causes often connection issues
 	if (defined $ftp) {
 		$logger->debug("changing into folder [".$FTP->{remoteDir}."]");
 		if ($ftp->setcwd($FTP->{remoteDir})) {
@@ -130,15 +134,15 @@ sub uploadFile {
 					return 0;
 				}
 			} else {
-				# sichere methode für den upload falls ein monitor "zuhört": upload eines temp file, dann remote auf finalen namen umbenennen.
-				# zuerst lokal auf temp... umbenennen
+				# safe method for uploading in case a monitor "listens": upload temp file, then rename remotely to final name
+				# first rename to temp... locally
 				rename $localFile, "temp.".$localFile or $logger->error("error: can't rename local file ".$localFile." to temp.".$localFile.", reason: ".$!) ;
 				$logger->info("Sftp: hinaufladen von file temp.$localFile ...");
 				if (!$ftp->put("temp.".$localFile, "temp.".$localFile)) {
 					$logger->error("error: can't upload local temp file to ".$FTP->{remoteDir}."temp.".$localFile.", reason: ".$ftp->error);
 					return 0;
 				}
-				# dann remote richtigstellen
+				# then name back again remotely
 				if (!$FTP->{dontMoveTempImmediately}) {
 					$logger->debug("Sftp: remote umbenennen temp file temp.$localFile auf $localFile ...");
 					if ($ftp->rename("temp.".$localFile,$localFile)) {
@@ -148,7 +152,7 @@ sub uploadFile {
 						$logger->error("error: can't rename remote-file ".$FTP->{remoteDir}."temp.".$localFile." to ".$localFile.", reason: ".$errmsg) ;
 					}
 				}
-				# zuletzt auch lokal zurückbenennen damit normal weiterverarbeitet werden kann
+				# last rename temp locally as well for further processing
 				rename "temp.".$localFile, $localFile;
 			}
 		} else {
@@ -209,17 +213,17 @@ sub archiveFiles {
 					$logger->debug("removed remote-file ".$FTP->{remoteDir}."/".$remoteFile.".");
 				} else {
 					my $errmsg = $ftp->error;
-					$logger->error("error: can't remove remote-file ".$FTP->{remoteDir}."/".$remoteFile.", reason: ".$errmsg) if $errmsg !~ /No such file or directory/;
-					$logger->warn("error: ".$errmsg) if $errmsg =~ /No such file or directory/;
+					$logger->error("error: can't remove remote-file ".$FTP->{remoteDir}."/".$remoteFile.", reason: ".$errmsg) if $errmsg !~ /no such file or directory/i;
+					$logger->warn("error: ".$errmsg) if $errmsg =~ /no such file or directory/i;
 				}
 			}
-			$logger->info("archiviing files @filesToArchive to ".$FTP->{archiveFolder}." ...") if @filesToArchive;
+			$logger->info("archiving files @filesToArchive to ".$FTP->{archiveFolder}." ...") if @filesToArchive;
 			for my $remoteFile (@filesToArchive) {
-				if ($remoteFile =~ /\*/) { # wenn ein glob character enthalten, dann mehrere Files ins Archiv bewegen !
-					$logger->debug("moving $remoteFile to ".$FTP->{archiveFolder}." ...");
+				if ($remoteFile =~ /\*/) { # if glob character contained, then move multiple files
+					$logger->debug("moving $remoteFile to ".$FTP->{archiveFolder});
 					my @remoteFiles = $ftp->glob($remoteFile, names_only => 1);
 					for my $specFile (@remoteFiles) {
-						# $specFile ist trotz names_only leider als relativer pfad zum aktuellen ordner ($FTP->{remoteDir})
+						# $specFile is a relative path to current folder ($FTP->{remoteDir}, names_only => 1 doesn't help here)
 						my ($specFilePathOnly, $specFileNameOnly) = ($specFile =~ /^(.*\/)(.*?)$/);
 						$specFileNameOnly = $specFile if $specFileNameOnly eq "";
 						if ($ftp->rename($specFile,$specFilePathOnly.$FTP->{archiveFolder}."/".$archiveTimestamp.".".$specFileNameOnly)) {
@@ -280,8 +284,10 @@ sub login {
 	};
 	# for unstable connections, retry connecting max $maxConnectionTries.
 	my $connectionTries = 0;
-	# for passwords containing chars that can't be passed via shell to ssh_cmd, quote (\"....\>...\")
-	$pwd = Win32::ShellQuote::quote_system($pwd) if ($pwd =~ /[()"<>&]/);
+	# quote passwords containing chars that can't be passed via windows shell to ssh_cmd (\"....\>...\")
+	if ($^O =~ /MSWin/) {
+		$pwd = Win32::ShellQuote::quote_system($pwd) if ($pwd =~ /[()"<>&]/);
+	}
 	my $debugLevel = $FTP->{FTPdebugLevel};
 	my @moreparams;
 	push @moreparams, ("-hostkey", $FTP->{hostkey})  if $FTP->{hostkey};
@@ -328,7 +334,7 @@ sub login {
 __END__
 =head1 NAME
 
-ETL::Wrap::FTP - wrapper for Net::FTP resp. Net::SFTP::Foreign
+ETL::Wrap::FTP - wrapper for Net::SFTP::Foreign
 
 =head1 SYNOPSIS
 
@@ -381,8 +387,6 @@ ETL::Wrap::FTP - wrapper for Net::FTP resp. Net::SFTP::Foreign
  Rückgabe: 1 wenn löschen oder archivieren ALLER Dateien erfolgreich (bricht nicht ab), 0 wenn fehler (ausser "No such file or directory", hier wird nur ein warning generiert).
 
 =item login: log in auf FTP server, liefert handle der ftp verbindung in ref parameter $ftp. 
-
- Diese Funktion ist für den internen Gebrauch, sie wird von den anderen Funktionien in FTPUtil verwendet.
 
  $ftp .. Rückgabeparameter: ref auf handle der ftp verbindung
  Rückgabe: 1 wenn login bzw. wechsel auf binary/ascii erfolgreich, 0 wenn fehler.

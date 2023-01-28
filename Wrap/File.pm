@@ -3,7 +3,7 @@ package ETL::Wrap::File;
 use strict; 
 use Text::CSV; use Data::XLSX::Parser; use Spreadsheet::ParseExcel; use Exporter;
 use Log::Log4perl qw(get_logger); use Time::localtime; use Data::Dumper; use XML::LibXML; use Scalar::Util qw(looks_like_number); use XML::LibXML::Debugging;
-use Encode; use ETL::Wrap::DateUtil; use ETL::Wrap::Common;
+use Encode; use ETL::Wrap::DateUtil; 
 
 our @ISA = qw(Exporter);
 our @EXPORT = qw(readText readExcel readXML writeText);

@@ -64,6 +64,16 @@ sub setupETLWrap {
 	ETL::Wrap::Common::getOptions();
 	ETL::Wrap::Common::setupConfigMerge();
 	ETL::Wrap::Common::setupLogging(\%common);
+	# starting log entry: scriptname + parameters, first remove sensitive information.
+	$Data::Dumper::Indent = 0;
+	my $logger = get_logger();
+	my %commonDump = %common;
+	for my $mainCat (keys %commonDump) {
+		my @sensitiveKeys = @{$commonDump{$mainCat}{sensitive}};
+		undef $commonDump{$mainCat}{$_} for (@sensitiveKeys);
+	}
+	$logger->info("======> started ".$execute{scriptname}.", parameters: ".Dumper(\%commonDump));
+	$Data::Dumper::Indent = 2;
 	ETL::Wrap::Common::setupStarting(\%common);
 	ETL::Wrap::Common::checkHash(\%config,"config");
 	ETL::Wrap::Common::checkHash(\%common,"common");
@@ -87,7 +97,7 @@ sub openDBConn {
 	my $exitTry = 0;
 	$logger->info("openDBConn");
 	do {
-		ETL::Wrap::DB::newDBH($DB) or do {
+		ETL::Wrap::DB::newDBH($DB,\%execute) or do {
 			$exitTry = 1;
 			$logger->error("couldn't open database connection, DB config:\n".Dumper($DB));
 			retrySleepAbort($arg);

@@ -4,7 +4,7 @@ use strict;
 use Exporter; use Log::Log4perl qw(get_logger); use ETL::Wrap::DateUtil; use Data::Dumper; use Getopt::Long qw(:config no_ignore_case); use Scalar::Util qw(looks_like_number);
 # to make use of colored logs with Log::Log4perl::Appender::ScreenColoredLevels on windows we have to use that (special "use" to make this optional on non-win environments)
 BEGIN {
-	if ($^O =~ /Win(?:32|64)/) {require Win32::Console::ANSI; Win32::Console::ANSI->import();} 
+	if ($^O =~ /MSWin/) {require Win32::Console::ANSI; Win32::Console::ANSI->import();} 
 }
 our %common;
 our %config;
@@ -26,11 +26,13 @@ my %hashCheck = (
 		File => {},
 	},
 	config => {
-		checkLookup => {test => {errmailaddress => "",errmailsubject => "",timeToCheck =>, freqToCheck => "", logFileToCheck => "", logcheck => ""},},
+		checkLookup => {test => {errmailaddress => "",errmailsubject => "",timeToCheck =>, freqToCheck => "", logFileToCheck => "", logcheck => "",logRootPath =>""},},
 		errmailaddress => "",
 		errmailsubject => "",
 		fromaddress => "",
 		folderEnvironmentMapping => {Test => "Test", Dev => "Dev", "" => "Prod"},
+		logCheckHoliday => "",
+		logs_to_be_ignored_in_nonprod => '',
 		smtpServer => "",
 		smtpAuth => {user => '', pwd => ''},
 		smtpTimeout => 60,
@@ -278,13 +280,9 @@ sub setupLogging {
 	Log::Log4perl::init($ENV{ETL_WRAP_CONFIG_PATH}."/".$execute{envraw}."/log.config"); # environment dependent log config, Prod is in ETL_WRAP_CONFIG_PATH
 	MIME::Lite->send('smtp', $config{smtpServer}, AuthUser=>$config{smtpAuth}{user}, AuthPass=>$config{smtpAuth}{pwd}, Timeout=>$config{smtpTimeout}); # configure err mail sending
 
-	# central log error handling from $config{checkLookup}{<>};
+	# get email from central log error handling $config{checkLookup}{<>};
 	$execute{errmailaddress} = $config{checkLookup}{$execute{scriptname}}{errmailaddress}; # errmailaddress for the process script
 	$execute{errmailsubject} = $config{checkLookup}{$execute{scriptname}}{errmailsubject}; # errmailsubject for the process script
-	#$execute{timeToCheck} = $config{checkLookup}{$execute{scriptname}}{timeToCheck}; # scheduled time of job (don't look earlier for log entries)
-	#$execute{freqToCheck} = $config{checkLookup}{$execute{scriptname}}{freqToCheck}; # frequency to check entries (B,D,M,M1) ...
-	#$execute{logFileToCheck} = $config{checkLookup}{$execute{scriptname}}{logFileToCheck}; # Logfile to be searched
-	#$execute{logcheck} = $config{checkLookup}{$execute{scriptname}}{logcheck}; # Logcheck (regex)
 	$execute{errmailaddress} = $config{testerrmailaddress} if $execute{envraw};
 	if ($execute{errmailaddress}) {
 		setErrSubject(""); # no context 
@@ -457,9 +455,10 @@ ETL::Wrap::Common - Common parts for the ETL::Wrap package
 
 =head1 SYNOPSIS
 
+ %common .. common load configs set process script
  %config .. hash for global config (typically set in site.config)
- %load .. hash of type hashes defining loads within an execution
- %execute .. hash of parameters for current execution (having one or multiple loads)
+ @loads .. list of hashes defining load processes
+ %execute .. hash of parameters for current process (having one or multiple loads)
 
  getLogFPathForMail
  getLogFPath

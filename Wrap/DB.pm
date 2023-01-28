@@ -2,7 +2,6 @@ package ETL::Wrap::DB;
 
 use strict; 
 use DBI qw(:sql_types); use DBD::ODBC; use Data::Dumper; use Log::Log4perl qw(get_logger); use Exporter;
-use ETL::Wrap::Common;
 
 our @ISA = qw(Exporter);
 our @EXPORT = qw(newDBH beginWork commit rollback readFromDB readFromDBHash doInDB storeInDB deleteFromDB updateInDB);
@@ -11,7 +10,7 @@ my $dbh;
 my $DSN;
 
 sub newDBH {
-	my ($DB) = @_;
+	my ($DB,$execute) = @_;
 	my $logger = get_logger();
 	my ($DSNeval, $newDSN);
 	$DSNeval = ($DB->{isTrusted} ? $DB->{DSNTrusted} : $DB->{DSNUntrusted});
@@ -244,7 +243,7 @@ sub storeInDB {
 					# in case of numeric data, prevent any nonnumeric input...
 					$dataArray[$tgtCol] =~ s/%$// if $dataArray[$tgtCol] =~ /[\d\.]*%$/; # get rid of percent sign
 					# ignore everything that doesn't look like a numeric (also regarding scientific notation (E...)). 
-					# decimal place before comma is optional, at least one decimal digit is needed (kann aber auch Ganzzahlen)
+					# decimal place before comma is optional, at least one decimal digit is needed (but also integers are possible)
 					$dataArray[$tgtCol] = undef if !($dataArray[$tgtCol] =~ /^-*\d*\.?\d+E*[-+]*\d*$/);
 					$dataArray[$tgtCol] = undef if $dataArray[$tgtCol] =~ /^N\/A$/;
 					# smallest possible double for sql server = 1.79E-308
@@ -306,29 +305,29 @@ sub storeInDB {
 					$dataArray[$tgtCol] =~ s/(.*)/'$1'/ if $dataArray[$tgtCol]; # quote strings
 				}
 
-				# insert/update statement aufbauen
+				# build insert/update statement
 				my $colName = $columns[$dbCol]; 
 				my $colVal = $dataArray[$tgtCol];
-				# übergehe feld aufbau falls incrementalStore gesetzt und kein feldinhalt gefunden wurde...
+				# skip field building for incrementalStore and no content was found
 				unless ($incrementalStore && !defined($data->[$i]{$columns[$dbCol]})) {
-					# explizites NULL für leere werte ...
+					# explicit NULL for empty values
 					$colVal = "NULL" if !defined($dataArray[$tgtCol]) or $dataArray[$tgtCol] eq "";
-					# primärschlüsselwerte mit daten aus aktueller Zeile für update falls insert fehlschlägt befüllen
+					# fill primary key values with data from current row for update (in case insert fails)
 					$updselector =~ s/$colName\s*=\s*\?/\[$colName\] = $colVal/ if ($updselector =~ /^$colName\s*=\s*\?/ || $updselector =~ /AND $colName\s*=\s*\?/i);
-					# Selektionswerte mit daten aus erster auftretenden zeile befüllen (nur bei der ersten auftretenden Zeile gemacht) um zutreffende Daten vor dem insert zu löschen (alle diese Daten haben die gleichen Selektionswerte)
+					# delete before select statement requires specific selector to only delete once for occurred data (first appearance of colVal)
 					$deleteBeforeInsertSelector =~ s/$colName\s*=\s*\?/\[$colName\] = $colVal/ if ($deleteBeforeInsertSelector =~ /^$colName\s*=\s*\?/ || $deleteBeforeInsertSelector =~ /AND $colName\s*=\s*\?/);
 					$updcols.="[".$colName."] = ".$colVal.",";
 					$inscols.="[".$colName."],";
 					$inscolVals.=$colVal.",";
 					$tgtCol++;
 				}
-				$debugKey =~ s/$colName\s*=\s*\?/$colName = $colVal/ if ($debugKey =~ /$colName\s*=\s*\?/); # befülle debug Feldschlüsselanzeige (für Fehlermeldungen)
+				$debugKey =~ s/$colName\s*=\s*\?/$colName = $colVal/ if ($debugKey =~ /$colName\s*=\s*\?/); # fill debug field display (for error messages)
 			}
-			# Beim Statementaufbau gesammelte Fehler/Warnungen je nach Schweregrad ausgeben
-			$logger->error($errorIndicator.", bei [".$debugKey."]") if $errorIndicator and $severity>=1;
-			$logger->warn($errorIndicator.", bei [".$debugKey."]") if $errorIndicator and $severity==0;
-			return 0 if $errorIndicator and $severity == 2; # Abbruch bei unmöglichem update/insert
-			# zutreffende Daten vor dem (wiederholten) insert löschen. wird nur einmal gemacht bei der ersten zeile, die $deleteBeforeInsertSelector erfüllt ...
+			# log collected errors during building of statement
+			$logger->error($errorIndicator.", at [".$debugKey."]") if $errorIndicator and $severity>=1;
+			$logger->warn($errorIndicator.", at [".$debugKey."]") if $errorIndicator and $severity==0;
+			return 0 if $errorIndicator and $severity == 2; # leave for impossible update/insert
+			# delete relevant data before insert. only done once for first row that fulfills $deleteBeforeInsertSelector
 			if ($deleteBeforeInsertSelector && !$beforeInsert{$deleteBeforeInsertSelector}) {
 				$logger->info("deleting data from $schemaName.$tableName, criteria: $deleteBeforeInsertSelector");
 				my $dostring = "delete from $schemaName.$tableName WHERE $deleteBeforeInsertSelector";
@@ -338,70 +337,70 @@ sub storeInDB {
 				};
 				# mark deleteBeforeInsertSelector as executed for these data
 				$beforeInsert{$deleteBeforeInsertSelector} = 1;
-				$logger->info("Daten in $schemaName.$tableName eintragen");
+				$logger->info("enter data into $schemaName.$tableName");
 			}
 			if ($logger->is_trace) {
 				$logger->trace("data to be inserted:");
 				$logger->trace($inscols);
 				$logger->trace($inscolVals);
 			}
-			substr($inscols, -1) = ""; substr($inscolVals, -1) = ""; substr($updcols, -1) = ""; # letztes "," entfernen
-			# update vor insert nur machen, wenn kein deleteBeforeInsertSelector gegeben (da sonst evtl. kein primkey angegeben)
+			substr($inscols, -1) = ""; substr($inscolVals, -1) = ""; substr($updcols, -1) = ""; # remove last comma
+			# only update before insert, if no deleteBeforeInsertSelector given (may not have a primkey then)
 			if ($doUpdateBeforeInsert && !$deleteBeforeInsertSelector) {
-				# Daten eintragen:  Zuerst UPDATE versuchen
+				# insert data:  first try UPDATE
 				my $dostring = "UPDATE $schemaName.$tableName SET $updcols WHERE $updselector";
 				my $affectedRows = $dbh->do($dostring);
 				if ($affectedRows == 0 or $DBI::errstr) {
 					if ($affectedRows == 0 and $upsert) {
 						my $dostring = "INSERT INTO $schemaName.$tableName ($inscols) VALUES (".$inscolVals.")";# ($placeholders)";
-						$logger->trace("Aktualisieren gescheitert (noch nicht vorhanden), Daten einfügen: ".$dostring) if $logger->is_trace;
-						# Daten eintragen: Dann INSERT versuchen
+						$logger->trace("update failed (not yet existing), insert data instead: ".$dostring) if $logger->is_trace;
+						# then try INSERT
 						$dbh->do($dostring) or do {
 							my $errRec;
 							for (my $j=0; $j < scalar(@{columns}); $j++) {
 								my $datatype = $coldefs->{$columns[$j]}{"TYPE_NAME"}."(".$coldefs->{$columns[$j]}{"COLUMN_SIZE"}.")";
 								$errRec.= $columns[$j]."[".$datatype."]:".$dataArray[$j].", ";
 							}
-							$logger->error($DBI::errstr." bei Insert von Datensatz: $errRec, ausgeführtes Statement: $dostring");
+							$logger->error($DBI::errstr." when inserting data: $errRec, executed statement: $dostring");
 							$DBerrHappened = 1;
 						}
-					# Fehlermeldung (bei update Fehlern ohne upsert flag gibts keinen Grund das zu unterdrücken...
+					# error message not needed to suppress for update errors without upsert flag
 					} else {
 						my $errRec;
 						for (my $j=0; $j < scalar(@{columns}); $j++) {
 							my $datatype = $coldefs->{$columns[$j]}{"TYPE_NAME"}."(".$coldefs->{$columns[$j]}{"COLUMN_SIZE"}.")";
 							$errRec.= $columns[$j]."[".$datatype."]:".$dataArray[$j].", ";
 						}
-						$logger->error($DBI::errstr." bei Insert von Datensatz: $errRec, ausgeführtes Statement: $dostring");
+						$logger->error($DBI::errstr." when inserting data: $errRec, executed statement: $dostring");
 						$DBerrHappened = 1;
 					}
 				};
 			} else {
-				# Daten eintragen:  Zuerst INSERT versuchen
+				# insert data:  first try INSERT
 				my $dostring = "INSERT INTO $schemaName.$tableName ($inscols) VALUES (".$inscolVals.")";# ($placeholders)";
 				$dbh->do($dostring) or do {
 					$logger->trace("DBI Error:".$DBI::errstr) if $logger->is_trace;
-					if ($DBI::errstr =~ /Cannot insert duplicate key/ and $upsert) {
+					if ($DBI::errstr =~ /cannot insert duplicate key/i and $upsert) {
 						my $dostring = "UPDATE $schemaName.$tableName SET $updcols WHERE $updselector";
-						$logger->trace("Einfügen gescheitert (schon vorhanden), Daten aktualisieren: ".$dostring) if $logger->is_trace;
-						# Daten eintragen: Dann UPDATE versuchen
+						$logger->trace("insert failed (already existing), update date instead: ".$dostring) if $logger->is_trace;
+						# insert data:  then try UPDATE
 						$dbh->do($dostring) or do {
 							my $errRec;
 							for (my $j=0; $j < scalar(@{columns}); $j++) {
 								my $datatype = $coldefs->{$columns[$j]}{"TYPE_NAME"}."(".$coldefs->{$columns[$j]}{"COLUMN_SIZE"}.")";
 								$errRec.= $columns[$j]."[".$datatype."]:".$dataArray[$j].", ";
 							}
-							$logger->error($DBI::errstr." bei Update von Datensatz: $errRec, ausgeführtes Statement: $dostring");
+							$logger->error($DBI::errstr." when updating data: $errRec, executed statement: $dostring");
 							$DBerrHappened = 1;
 						}
-					# Fehlermeldung falls gewollt (kein update bei Insertfehler und duplikatsfehler sollen nicht ignoriert werden)...
-					} elsif (($DBI::errstr =~ /Cannot insert duplicate key/ and !$ignoreDuplicateErrs) or $DBI::errstr !~ /Cannot insert duplicate key/) {
+					# error message if needed
+					} elsif (($DBI::errstr =~ /cannot insert duplicate key/i and !$ignoreDuplicateErrs) or $DBI::errstr !~ /cannot insert duplicate key/i) {
 						my $errRec;
 						for (my $j=0; $j < scalar(@{columns}); $j++) {
 							my $datatype = $coldefs->{$columns[$j]}{"TYPE_NAME"}."(".$coldefs->{$columns[$j]}{"COLUMN_SIZE"}.")";
 							$errRec.= $columns[$j]."[".$datatype."]:".$dataArray[$j].", ";
 						}
-						$logger->error($DBI::errstr." bei Insert von Datensatz: $errRec, ausgeführtes Statement: $dostring");
+						$logger->error($DBI::errstr." when updating data: $errRec, executed statement: $dostring");
 						$DBerrHappened = 1;
 					}
 				};
@@ -415,7 +414,7 @@ sub storeInDB {
 }
 
 sub deleteFromDB {
-	my ($data,$DB) = @_;
+	my ($DB,$data) = @_;
 	my $tableName = $DB->{tablename};
 	my $keycol = $DB->{keyfield};
 	my $logger = get_logger();
@@ -426,7 +425,7 @@ sub deleteFromDB {
 	if ((@{$data}) > 0) {
 		# prepare statement
 		my $whereclause = $keycol;
-		$whereclause = "[$keycol] = ?" if $keycol !~ /\?/; # wenn $keycol nur Feldnamen (kein ?) enthält, dann where klausel hier bauen.
+		$whereclause = "[$keycol] = ?" if $keycol !~ /\?/; # if $keycol only contains field names (no ?), then build clause here
 		my $sth = $dbh->prepare("DELETE FROM ".$tableName." WHERE $whereclause");
 		# execute with data
 		for my $primkey (@{$data}) {
@@ -505,21 +504,20 @@ __END__
 
 =encoding CP1252
 
-ETL::Wrap::DB - Datenbank Helperfunktionen (wrapper für DBI / DBD::ODBC)
+ETL::Wrap::DB - Database wrapper functions (for DBI / DBD::ODBC)
 
 =head1 SYNOPSIS
 
  newDBH ($server, $database, $trusted)
- beginWork ($dbh)
- commit ($dbh)
- rollback ($dbh)
- readFromDB ($dbh, $select)
- readFromDBHash ($dbh, $select, $keyfield)
- doInDB ($dbh, $doString, $retvals, @parameters)
- storeInDB ($data, $dbh, $tableName, $addID, $upsert, $primkey, 
-            $ignoreDuplicateErrs, $deleteBeforeInsertSelector, $incrementalStore, $doUpdateBeforeInsert, $debugKeyIndicator)
- deleteFromDB ($data, $dbh, $tableName, $keycol)
- updateInDB ($data, $dbh, $tableName, $keycol)
+ beginWork ()
+ commit ()
+ rollback ()
+ readFromDB ($select)
+ readFromDBHash ( $select, $keyfield)
+ doInDB ( $doString, $retvals, @parameters)
+ storeInDB ( $dbh, $tableName, $addID, $upsert, $primkey, 
+ deleteFromDB ($data, $tableName, $keycol)
+ updateInDB ($data, $tableName, $keycol)
 
 =head1 DESCRIPTION
 
