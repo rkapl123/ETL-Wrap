@@ -32,7 +32,7 @@ sub removeFilesOlderX {
 										# filename, longname (as from ls -l) and "a", which is a Net::SFTP::Foreign::Attributes object that contains atime, mtime, permissions and size of the file.
 										my $attr = $_[1]->{a}; 
 										# if "wanted" returns true (mod time is older than mtimeToKeep), then the file is being added to the returned array
-										$logger->trace("file: ".$_[1]->{filename}.",mtime: ".$attr->mtime.",mtimeToKeep: ".$mtimeToKeep);
+										$logger->trace("file: ".$_[1]->{filename}.",mtime: ".$attr->mtime.",mtimeToKeep: ".$mtimeToKeep) if $logger->is_trace;
 										return $attr->mtime < $mtimeToKeep && S_ISREG($attr->perm); # add file if mod time < required mod time AND it is a regular file...
 									} ) or $logger->error("Kann file liste nicht holen, Ursache: ".$ftp->error.", status: ".$ftp->status);
 				for my $file (@$files) {
@@ -85,10 +85,10 @@ sub getFiles {
 			} else {
 				my $attr = $ftp->stat($remoteFile);
 				my $mod_time = $attr->mtime if $attr;
-				$logger->trace(Dumper($attr));
-				$logger->debug("get file $remoteFile ...");
+				$logger->trace(Dumper($attr)) if $logger->is_trace;
+				$logger->debug("get file $remoteFile");
 				if (!$ftp->get($remoteFile, $localFile, queue_size => $queue_size)) { # copy_time => 0
-					if (!$param->{fileToRetrieveOptional} and !$FTP->{filenameToRemove}) { # ignore errors for a file that was either removed or is optional 
+					if (!$param->{fileToRetrieveOptional} and !$FTP->{fileToRemove}) { # ignore errors for a file that was either removed or is optional 
 						unless ($ftp->error == SFTP_ERR_LOCAL_UTIME_FAILED || $suppressGetError) {
 							$logger->warn("error: SFTP_ERR_LOCAL_UTIME_FAILED, sftp->status:".$ftp->status);
 							$logger->error("error: can't get remote-file ".$remoteFile." (in ".$ftp->cwd()."), reason: ".$ftp->error);
@@ -128,7 +128,7 @@ sub uploadFile {
 		$logger->debug("changing into folder [".$FTP->{remoteDir}."]");
 		if ($ftp->setcwd($FTP->{remoteDir})) {
 			if ($FTP->{dontUseTempFile}) {
-				$logger->info("uploading file $localFile , doSetStat: $doSetStat ...");
+				$logger->info("uploading file $localFile, doSetStat: $doSetStat");
 				if (!$ftp->put($localFile, $localFile, late_set_perm => 1, copy_perm => $doSetStat, copy_time => $doSetStat)) {
 					$logger->error("error: can't upload local file ".$FTP->{remoteDir}.$localFile.", reason: ".$ftp->error);
 					return 0;
@@ -137,16 +137,16 @@ sub uploadFile {
 				# safe method for uploading in case a monitor "listens": upload temp file, then rename remotely to final name
 				# first rename to temp... locally
 				rename $localFile, "temp.".$localFile or $logger->error("error: can't rename local file ".$localFile." to temp.".$localFile.", reason: ".$!) ;
-				$logger->info("Sftp: hinaufladen von file temp.$localFile ...");
+				$logger->info("uploading file temp.$localFile, doSetStat: $doSetStat");
 				if (!$ftp->put("temp.".$localFile, "temp.".$localFile)) {
 					$logger->error("error: can't upload local temp file to ".$FTP->{remoteDir}."temp.".$localFile.", reason: ".$ftp->error);
 					return 0;
 				}
 				# then name back again remotely
 				if (!$FTP->{dontMoveTempImmediately}) {
-					$logger->debug("Sftp: remote umbenennen temp file temp.$localFile auf $localFile ...");
+					$logger->debug("Sftp: remote rename temp file temp.$localFile auf $localFile ...");
 					if ($ftp->rename("temp.".$localFile,$localFile)) {
-						$logger->debug("Sftp: temporäres file ".$FTP->{remoteDir}."temp.".$localFile." umbenannt auf ".$localFile);
+						$logger->debug("Sftp: temporary file ".$FTP->{remoteDir}."temp.".$localFile." renamed to ".$localFile);
 					} else {
 						my $errmsg = $ftp->error;
 						$logger->error("error: can't rename remote-file ".$FTP->{remoteDir}."temp.".$localFile." to ".$localFile.", reason: ".$errmsg) ;
@@ -227,11 +227,11 @@ sub archiveFiles {
 						my ($specFilePathOnly, $specFileNameOnly) = ($specFile =~ /^(.*\/)(.*?)$/);
 						$specFileNameOnly = $specFile if $specFileNameOnly eq "";
 						if ($ftp->rename($specFile,$specFilePathOnly.$FTP->{archiveFolder}."/".$archiveTimestamp.".".$specFileNameOnly)) {
-							$logger->debug("Sftp: remote-file ".$specFile." archiviert auf ".$specFilePathOnly.$FTP->{archiveFolder}."/".$archiveTimestamp.".".$specFileNameOnly);
+							$logger->debug("remote-file ".$specFile." archived to ".$specFilePathOnly.$FTP->{archiveFolder}."/".$archiveTimestamp.".".$specFileNameOnly);
 						} else {
 							my $errmsg = $ftp->error;
 							$logger->error("error: can't rename remote-file ".$specFile." to ".$specFilePathOnly."/".$FTP->{archiveFolder}."/".$archiveTimestamp.".".$specFileNameOnly.", reason: ".$errmsg) if $errmsg !~ /No such file or directory/;
-							$logger->warn("Sftp error: ".$errmsg) if $errmsg =~ /No such file or directory/;
+							$logger->warn("error: ".$errmsg) if $errmsg =~ /No such file or directory/;
 						}
 					}
 				} else {
@@ -268,7 +268,7 @@ sub login {
 		return 1;
 	}
 	(!$RemoteHost) and do {
-		$logger->error('RemoteHost not set in $FTP->{remoteHost}{'.$execute->{env}.'} !');
+		$logger->error('remote host not set in $FTP->{remoteHost}{'.$execute->{env}.'} !');
 		return 0;
 	};
 	my $maxConnectionTries = $FTP->{maxConnectionTries};
@@ -347,49 +347,59 @@ ETL::Wrap::FTP - wrapper for Net::SFTP::Foreign
 
 =head1 DESCRIPTION
 
-=item removeFilesOlderX: entferne daten vom FTP server, die älter als Datums/Zeitstempel X sind
+=item removeFilesOlderX: remove files on FTP server being older than Date/Timestamp X (given in day/mon/year in remove => {removeFolders => ["",""], day=>, mon=>, year=>1})
 
- Rückgabe: 1 wenn ALLE Dateien erfolgreich entfernt (bricht nicht ab), 0 wenn fehler.
+ returns 1 if ALL files were removed successfully, 0 on error (doesn't exit early)
 
-=item fetchFiles: hole Dateien vom FTP server
+=item fetchFiles: get files from FTP server
 
- $param .. ref auf hash mit funktionsparametern:
- $param->{filesToRetrieve} .. ref auf array mit files, die abzuholen sind. Wenn ein glob (*) enthalten ist, dann ist localDir für download (mget !) zwingend anzugeben
- $param->{filesToRemove} .. ref auf array mit files, die zu löschen sind, das wird nicht hier gemacht, sondern zur Fehlerunterdrückung verwendet.
- $param->{filesToRetrieveOptional} .. ref auf hash mit files, die optional sind (müssen auch in filesToRetrieve sein)
- $param->{localDir} .. lokale(s) Verzeichnis(sse) für simplen Download (ohne weitere Verarbeitung), bei mehreren File(glob)s ist hier ein ref auf Array von Verzeichnissen anzugeben
- $param->{suppressGetError} .. unterdrücken von fehlermeldungen beim get (erwünscht z.b. bei durchgeführten gewollten wiederholungen),
- $param->{filesTypeAssoc} => übergebener ref auf hash mit file => type (aus @insertOrder) assoziation, diese sind zum gruppieren der erhaltenen files pro type in filesRetrieved, damit unerwünschte files herausgefiltert werden können. Wird in processFiles.pl gesetzt!
- $param->{filesRetrieved} => zurückgegebener ref auf hash mit erhaltenen files bei fileglobs pro type. Wird von processFiles.pl verwendet!
- Rückgabe: 1 wenn ALLE Dateien erfolgreich geholt (bricht nicht ab), 0 wenn fehler.
+ $param .. ref to hash with function parameters:
+ $param->{fileToRetrieve} .. file to retrieve. if a glob (*) is contained, then multiple files are retrieved
+ $param->{fileToRetrieveOptional} .. flag that file is optional
 
-=item writeFiles: schreibe Dateien auf FTP Server
+additionally following parameters from $FTP and $execute are important
+ $execute->{retrievedFiles} .. returned array with retrieved file (or files if glob was given)
+ $execute->{firstRunSuccess} .. used to suppress fetching errors (if first run was already successful)
+ $FTP->{queue_size} .. 
+ $FTP->{remoteDir} .. root remote Directory on FTP
+ $FTP->{path} .. path of folder of file below remoteDir
+ $FTP->{localDir} .. alternative storage path, if not given then files are stored to
+ $execute->{homedir} .. standard storage path
+ $FTP->{fileToRemove} .. ignore errors for a file that was either removed or is optional 
+ $FTP->{dontDoUtime} .. 
 
- Die Dateien werden entweder direkt (dontUseTempFile 1) oder als temp.<name> Dateien (dontUseTempFile 0 oder nicht gesetzt).
- Die temp Dateien werden auf dem Server final umbenannt (wenn dontMoveTempImmediately fehlt oder 0),
- wenn dontMoveTempImmediately =1 geschieht das erst in moveTempFiles. Der Zweck der temp Dateien ist eine atomare transaktion für Dateiüberwachungsjobs zu haben!
 
- $param .. ref auf hash mit funktionsparametern:
- $param->{filesToWrite} .. ref auf array mit files, die zu hinaufzuladen sind. Diese müssen im aktuellen lokalen Verzeichnis vorhanden sein
- Rückgabe: 1 wenn schreiben ALLER Dateien erfolgreich (bricht beim ersten Fehler ab), 0 wenn fehler.
+ returns 1 if ALL files were fetched successfully, 0 on error (doesn't exit early)
 
-=item moveTempFiles: separates umbenennen der temp Dateien auf FTP Server in finalen namen (atomare transaktion !)
+=item writeFiles: writes files to FTP server
 
- $param .. ref auf hash mit parametern:
- $param->{filesToWrite} ..  ref auf array mit files, die umzubenennen sind
- Rückgabe: 1 wenn umbenennen ALLER dateien erfolgreich (bricht beim ersten Fehler ab), 0 wenn fehler.
+ the files are written either directly ($FTP->{dontUseTempFile} 1) or as temp.<name> files ($FTP->{dontUseTempFile} 0 or not set).
+ those temp files are immediately renamed on the server (if $FTP->{dontMoveTempImmediately} 0 or not set),
+ when $FTP->{dontMoveTempImmediately} =1 then this happens in moveTempFiles. This is needed to have an atomic transaction for file monitoring jobs on the FTP site!
 
-=item archiveFiles: löschen oder archivieren von Dateien auf dem FTP server, die in $param->{filesToRemove} bzw. $param->{filesToArchive} angegeben sind
+ $param .. ref to hash with function parameters:
+ $param->{filesToWrite} .. ref to array with files to upload. these have to exist in local folder
 
- $param .. ref auf hash mit funktionsparametern:
- $param->{filesToArchive} .. ref auf array mit files, die zu archivieren sind, wenn ein glob (vorerst nur für SFTP) angegeben ist, dann wird dieser aufgelöst und alle erhaltenen Files separat archviert.
- $param->{filesToRemove} .. ref auf array mit files, die zu löschen sind
- Rückgabe: 1 wenn löschen oder archivieren ALLER Dateien erfolgreich (bricht nicht ab), 0 wenn fehler (ausser "No such file or directory", hier wird nur ein warning generiert).
+ returns 1 if ALL files were written successfully, 0 on error (exits on first error !)
 
-=item login: log in auf FTP server, liefert handle der ftp verbindung in ref parameter $ftp. 
+=item moveTempFiles: separately rename temp files on FTP Server to final names (atomic transaction !)
 
- $ftp .. Rückgabeparameter: ref auf handle der ftp verbindung
- Rückgabe: 1 wenn login bzw. wechsel auf binary/ascii erfolgreich, 0 wenn fehler.
+ $param .. ref to hash with function parameters:
+ $param->{filesToWrite} ..  ref to array with files to rename from temp to final
+ 
+ returns 1 if ALL files were renamed successfully, 0 on error (exits on first error !)
+
+=item archiveFiles: delete or archive files on FTP server, given in $param->{filesToRemove} or $param->{filesToArchive}
+
+ $param .. ref to hash with function parameters:
+ $param->{filesToArchive} .. ref to array with files to be archived if a glob is given, it is being resolved and all retrieved files are archived separately
+ $param->{filesToRemove} .. ref to array with files to be deleted
+
+ returns 1 if ALL files were deleted/archived successfully, 0 on error (doesn't exit early), except for "No such file or directory" errors, only warning is logged here
+
+=item login: log in to FTP server, stores the handle of the ftp connection
+
+ returns 1 if loging was successful, 0 on error
 
 =head1 COPYRIGHT
 

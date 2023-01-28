@@ -67,12 +67,14 @@ sub setupETLWrap {
 	# starting log entry: scriptname + parameters, first remove sensitive information.
 	$Data::Dumper::Indent = 0;
 	my $logger = get_logger();
-	my %commonDump = %common;
-	for my $mainCat (keys %commonDump) {
-		my @sensitiveKeys = @{$commonDump{$mainCat}{sensitive}};
-		undef $commonDump{$mainCat}{$_} for (@sensitiveKeys);
+	my $VAR1;
+	my $configdump = Dumper(\%common);
+	eval $configdump;
+	for my $mainCat (keys %common) {
+		my @sensitiveKeys = @{$common{$mainCat}{sensitive}} if $common{$mainCat}{sensitive};
+		undef $VAR1->{$mainCat}{$_} for (@sensitiveKeys);
 	}
-	$logger->info("======> started ".$execute{scriptname}.", parameters: ".Dumper(\%commonDump));
+	$logger->info("======> started ".$execute{scriptname}.", parameters: ".Dumper($VAR1));
 	$Data::Dumper::Indent = 2;
 	ETL::Wrap::Common::setupStarting(\%common);
 	ETL::Wrap::Common::checkHash(\%config,"config");
@@ -214,7 +216,7 @@ sub getFilesFromFTP {
 	}
 }
 
-# check files for continuation
+# check files for continuation of process
 sub checkFiles {
 	my $arg = shift;
 	my $logger = get_logger();
@@ -257,8 +259,8 @@ sub checkFiles {
 		return 0;
 	}
 	push @{$execute{filenames}}, @{$execute{retrievedFiles}} if $execute{retrievedFiles} && @{$execute{retrievedFiles}} > 0; # add the files retrieved with mget here.
-	push @{$execute{filesToRemove}}, @{$execute{filenames}} if $FTP->{filenameToRemove};
-	push @{$execute{filesToArchive}}, @{$execute{filenames}} if $FTP->{filenameToArchive};
+	push @{$execute{filesToRemove}}, @{$execute{filenames}} if $FTP->{fileToRemove};
+	push @{$execute{filesToArchive}}, @{$execute{filenames}} if $FTP->{fileToArchive};
 	# check, ob files or file globs exist when redoing
 	if ($process->{redoFile}) {
 		my $redoGlob = $File->{filename} if $File->{filename} =~ /\*/;
@@ -349,9 +351,9 @@ sub dumpDataIntoDB {
 					$process->{hadDBErrors}=1;
 				};
 			}
-			# Allgemein: Abspeichern der Daten, bis auf explizit markierte werden Tabellen vorher gelöscht !!
+			# store data, tables are deleted unless explicitly marked
 			unless ($DB->{keepContent}) {
-				$logger->info("Entferne alle daten von Tabelle $table ...");
+				$logger->info("removing all data from Table $table ...");
 				ETL::Wrap::DB::doInDB("delete from $table");
 			}
 			$logger->info("dumping data to table $table");
@@ -359,19 +361,17 @@ sub dumpDataIntoDB {
 				$logger->error("error storing DB data.. ");
 				$process->{hadDBErrors}=1;
 			}
-			# Nachbehandlung für alle configs, in denen postDumpProcessing definiert ist.
+			# post processing for all configs, where postDumpProcessing is defined
 			if ($process->{postDumpProcessing}) {
 				$logger->info("starting postDumpProcessing");
 				$logger->debug($process->{postDumpProcessing});
 				eval $process->{postDumpProcessing};
 				if ($@) {
-					$logger->error("Fehler ($@) in eval postDumpProcessing: ".$process->{postDumpProcessing});
+					$logger->error("error ($@) in eval postDumpProcessing: ".$process->{postDumpProcessing});
 					$process->{hadDBErrors} = 1;
 				}
 			}
-			# Nachbehandlung für alle configs, in denen postDumpExecs conditions 
-			# (Bedingung, unter der die einzelnen execs ausgeführt werden sollen) + zugehörige execs (DB scripts, die bei Erfüllung ausgeführt werden sollen)
-			# definiert sind.
+			# post processing (execute in DB!) for all configs, where postDumpExecs conditions and referred execs (DB scripts, that should be executed) are defined
 			if (!$process->{hadDBErrors} && $DB->{postDumpExecs}) {
 				$logger->info("starting postDumpExecs ... ");
 				for my $postDumpExec (@{$DB->{postDumpExecs}}) {
@@ -384,10 +384,9 @@ sub dumpDataIntoDB {
 					}
 					if ($dopostdumpexec) {
 						for my $exec (@{$postDumpExec->{execs}}) {
-							if ($exec) { # nur wenn definiert (auch im exec können 
-								# interpolieren von perl variablen, sofern sie in $exec vorkommen. Das dient zb zum setzen von $selectedDate in postDumpProcessing vorher.
-								# eval qq{"$exec"} evaluiert nicht $exec sondern nur den quotierten string
-								$exec = eval qq{"$exec"} if $exec =~ /$/;
+							if ($exec) { # only if defined (there could be an interpolation of perl variables, if these are contained in $exec. This is for setting $selectedDate in postDumpProcessing.
+								# eval qq{"$exec"} doesn't evaluate $exec but the quoted string (to enforce interpolation where needed)
+								$exec = eval qq{"$exec"} if $exec =~ /$/; # only interpolate if perl scalars are contained
 								$logger->info("post execute: $exec");
 								if (!ETL::Wrap::DB::doInDB($exec)) {
 									$logger->error("error executing postDumpExec: '".$exec."' .. ");
@@ -397,7 +396,7 @@ sub dumpDataIntoDB {
 						}
 					}
 				}
-				$logger->info("postDumpExecs erledigt");
+				$logger->info("postDumpExecs finished");
 			}
 			if (!$process->{hadDBErrors}) {
 				# Transaction: commit of DB changes
@@ -412,8 +411,8 @@ sub dumpDataIntoDB {
 				}
 			} else { # error dumping to DB or during pre/postDumpExecs
 				unless ($DB->{noDBTransaction}) {
-					$logger->info("Rollback aufgrund Fehlers beim Ablegen in die Datenbank !");
-					ETL::Wrap::DB::rollback() or $logger->error("Fehler beim rollback ...");
+					$logger->info("Rollback because of error when storing into database");
+					ETL::Wrap::DB::rollback() or $logger->error("error with rollback ...");
 				}
 				$logger->warn("error storing data into database");
 				$execute{processFail} = 1;
@@ -421,7 +420,7 @@ sub dumpDataIntoDB {
 		}
 	} else {# if ($process->{data}) .. in case there is no data and an empty file is OK no error will be thrown in readFile/readExcel, but any Import should not be done...
 		if ($File->{emptyOK}) {
-			$logger->warn('received empty file, will be ignored as $File{emptyOK}=1');
+			$logger->warn("received empty file, will be ignored as \$File{emptyOK}=1");
 		} else {
 			$logger->error("error as one of the files didn't contain data: ".@{$execute{filenames}}." !");
 		}
@@ -455,12 +454,12 @@ sub writeFileFromDB {
 	$logger->info("writeFileFromDB");
 	ETL::Wrap::Common::setErrSubject("reading files from DB");
 	my @columnnames;
-	# Daten von der Datenbank holen, jetzt inkl. Spaltennamen !
+	# get data from database, including column names (passed by ref)
 	$process->{data} = ETL::Wrap::DB::readFromDB($DB,\@columnnames) or $logger->error("couldn' read from DB");
-	# Durchreichen an columns Information aus der Datenbank, wenn nicht explizit gesetzt...
+	# pass column information from database, if not explicitly set
 	$File->{columns} = \@columnnames if !$File->{columns};
 	$logger->warn("no data retrieved") if (@{$process->{data}} == 0);
-	# Vorbehandlung für alle configs, in denen postReadProcessing definiert ist.
+	# prepare for all configs, where postReadProcessing is defined
 	if ($process->{postReadProcessing}) {
 		eval $process->{postReadProcessing};
 		$logger->error("error doing postReadProcessing: ".$process->{postReadProcessing}.": ".$@) if ($@);
@@ -485,7 +484,7 @@ sub executeUploadCMD {
 	my $logger = get_logger();
 	my ($File,$process) = ETL::Wrap::Common::extractConfigs($arg,"File","process");
 	$logger->info("executeUploadCMD");
-	ETL::Wrap::Common::setErrSubject("Hinaufladen der Dateien mit ".$process->{uploadCMD});
+	ETL::Wrap::Common::setErrSubject("Uploading files with ".$process->{uploadCMD});
 	system $process->{uploadCMD};
 	if ($? == -1) {
 		$logger->error($process->{uploadCMD}." failed: $!");
@@ -496,11 +495,11 @@ sub executeUploadCMD {
 	} else {
 		$logger->info("finished upload using ".$process->{uploadCMD});
 	}
-	# zusammenräumen
+	# remove produced files
 	for my $fileToWrite (@{$execute{filesToWrite}}) {
 		unlink ($process->{uploadCMDPath}."/".$fileToWrite) or $logger->error("couldn't remove $fileToWrite in ".$process->{uploadCMDPath}.": ".$!);
 	}
-	# Fehlerlog von uploadCMD übernehmen
+	# take error log from uploadCMD
 	if (-e $process->{uploadCMDLogfile}) {
 		my $err = do {
 			local $/ = undef;
@@ -517,11 +516,11 @@ sub uploadFilesToFTP {
 	my $logger = get_logger();
 	my ($FTP,$File,$process) = ETL::Wrap::Common::extractConfigs($arg,"FTP","File","process");
 	$logger->info("uploadFilesToFTP");
-	ETL::Wrap::Common::setErrSubject("Hinaufladen der Dateien mit FTP");
+	ETL::Wrap::Common::setErrSubject("Upload of files with FTP");
 	ETL::Wrap::FTP::writeFiles ({
 		filesToWrite => $execute{filesToWrite}
 	}) or do {
-		$logger->error("Fehler beim upload von dateien mit FTP...");
+		$logger->error("error uploading files with FTP...");
 	};
 }
 
@@ -559,7 +558,7 @@ sub processingEnd {
 		moveFilesToHistory($execute{filesToMoveinHistory},$process);
 		deleteFiles($execute{filesToDelete},$process);
 		if ($process->{plannedUntil}) {
-			$execute{processEnd} = 0; # zurücksetzen, wenn endzeit in Optionen mitgegeben (z.b. bei Collateral files)
+			$execute{processEnd} = 0; # reset, if repetition is planned
 			$execute{retrySeconds} = $process->{retrySecondsPlanned};
 		}
 		if ($execute{retryBecauseOfError}) {
@@ -680,13 +679,13 @@ ETL::Wrap - Package wrapping tasks for ETL
 =item dumpDataIntoDB
 =item processingEnd
 =item retrySleepAbort
-=item moveFilesToHistory: Datenfiles in History verschieben
- $filenames .. ref auf array von filenamen, die zu verschieben sind
- $redoDir .. redo Verzeichnis, falls Wiederholung
+=item moveFilesToHistory: move transferred files into history folder
+ $filenames .. ref auf array von file names to be moved
+ $process .. process context information
  
-=item deleteFiles: Datenfiles löschen
- $filenames .. ref auf array von filenamen, die zu löschen sind
- $redoDir .. redo Verzeichnis, falls Wiederholung
+=item deleteFiles: delete transferred files
+ $filenames .. ref to array of file names to be deleted
+ $process .. process context information
 
 =head1 COPYRIGHT
 

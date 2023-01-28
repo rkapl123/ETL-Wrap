@@ -238,49 +238,49 @@ LINE:
 	return 1;
 }
 
-my $startRow; # start zeile (header)
-my %dateColumn; # lookup für spalten mit datumswerten (schlüssel: excel spalte/zahl, wert: 1)
-my %headerColumn; # lookup für header (schlüssel: excel spalte/zahl, wert: tatsächlicher index des header felds)
-my $worksheet; # einzulesendes worksheet (numerisch, 1 basiert)
-my %dataRows; # zwischenablage für zellwerte
-my $maxRow; # unterste zeile ...
-my %xlheader; # erwartete excel header (schlüssel: excel spalte/zahl, wert: erwarteter inhalt des headerfelds in excel)
+# global variables for excel parsing
+my $startRow; # starting row (header)
+my %dateColumn; # lookup for columns with date values (key: excel column, numeric, starting with 1, value: 1 (boolean))
+my %headerColumn; # lookup for header (key: excel column, numeric, starting with 1, actual column of header field, value: 1 (boolean))
+my $worksheet; # worksheet to be read, old format (numeric, starting with 1)
+my %dataRows; # intermediate storage for row values
+my $maxRow; # bottom most row
+my %xlheader; # expected excel headers (key: excel column/numeric, starting with 1, value: expected content of header in excel)
 my $stoppedOnEmptyValue; 
 my $stopOnEmptyValueColumn;
 
 # event handler for readExcel (xls format)
 sub cell_handler {
 	my $workbook    = $_[0];
-	# ParseExcel index, zeilen und spalten sind 0 basiert, die allgemeine semantik ist aber 1 basiert...
+	# for the Spreadsheet::ParseExcel index, rows and columns are 0 based, generally semantics is 1 based
 	my $sheet_index = $_[1]+1;
 	my $row         = $_[2]+1;
 	my $col         = $_[3]+1;
 	my $cell        = $_[4];
 	my $logger = get_logger();
-	return unless $sheet_index eq $worksheet; # nur gewünschtes worksheet...
-	# header zeile prüfen...
+	return unless $sheet_index eq $worksheet; # only parse desired worksheet
 	if ($row == $startRow && $headerColumn{$col}) {
-		$logger->error("Erwarteter Header '".$xlheader{$col}."' nicht in Spalte ".$col.", stattdessen: ".$cell->unformatted()) if $xlheader{$col} ne $cell->unformatted();
+		# check header row here as well
+		$logger->error("expected header '".$xlheader{$col}."' not in column ".$col.", instead got: ".$cell->unformatted()) if $xlheader{$col} ne $cell->unformatted();
 	} elsif ($headerColumn{$col}) {
 		if (($stopOnEmptyValueColumn eq $col && !$cell) || $stoppedOnEmptyValue) {
-			$logger->warn("Leere Zelle in zeile $row / spalte $col und stopOnEmptyValueColumn auf $col gesetzt, übergehe daher ab hier") if !$stoppedOnEmptyValue; # nur einmal Warnung ausgeben
+			$logger->warn("empty cell in row $row / column $col and stopOnEmptyValueColumn is set to $col, skipping from here now") if !$stoppedOnEmptyValue; # pass warning only once
 			$stoppedOnEmptyValue = 1;
-		} else {
-			# daten zeile
+		} else { # data row
 			if ($dateColumn{$col}) {
-				# bei datumsfeldern braucht man value(), sonst kommt ein julianisches datum (= fortlaufende zahl, die ein Datum/Uhrzeit (nachkommastellen) repräsentiert)
-				# und gleich umwandeln aus US datumsformat !
+				# with date values need value(), otherwise (unformatted) a julian date (decimal representing date and time) is returned
+				# parse from US date format into YYYYMMDD, time parts are still ignored!
 				if ($cell) {
 					my ($m,$d,$y) = ($cell->value() =~ /(\d+?)\/(\d+?)\/(\d{4})/);
 					$dataRows{$row}{$headerColumn{$col}} = sprintf("%04d%02d%02d",$y,$m,$d);
 				}
 			} else {
-				# nicht datumswerte werden unformattiert geholt...
+				# non date values are fetched unformatted
 				$dataRows{$row}{$headerColumn{$col}} = $cell->unformatted() if $cell;
 			}
 			$maxRow = $row if $maxRow < $row;
 			#$logger->info(Dumper($cell));
-			#my $stopHere = <STDIN>;
+			#my $stopHere = <STDIN>; # for step debugging, uncomment these 2 lines
 		}
 	}
 }
@@ -294,21 +294,20 @@ sub row_handlerXLSX {
 		my $col = $cellDetail->{"c"};
 		my $value = $cellDetail->{"v"};
 
-		# header zeile prüfen...
 		if ($row == $startRow && $headerColumn{$col}) {
-			$logger->error("Erwarteter Header '".$xlheader{$col}."' nicht in Spalte ".$col.", stattdessen: $value") if $xlheader{$col} ne $value;
+			# check header row here as well
+			$logger->error("expected header '".$xlheader{$col}."' not in column ".$col.", instead got: $value") if $xlheader{$col} ne $value;
 		} elsif ($headerColumn{$col}) {
 			if (($stopOnEmptyValueColumn eq $col && !$value) || $stoppedOnEmptyValue) {
-				$logger->warn("Leere Zelle in zeile $row / spalte $col und stopOnEmptyValueColumn auf $col gesetzt, übergehe daher ab hier") if !$stoppedOnEmptyValue; # nur einmal Warnung ausgeben
+				$logger->warn("empty cell in row $row / column $col and stopOnEmptyValueColumn is set to $col, skipping from here now") if !$stoppedOnEmptyValue; # pass warning only once
 				$stoppedOnEmptyValue = 1;
-			} else {
+			} else { # data row
 				$logger->trace($headerColumn{$col}.":\n".Dumper($cellDetail)) if $logger->is_trace;
-				# daten zeile
 				if ($dateColumn{$col}) {
-					# bei datumsfeldern umwandeln aus epoch format !
+					# date fields are converted from epoch format !
 					$dataRows{$row}{$headerColumn{$col}} = convertEpochToYYYYMMDD($value);
 				} else {
-					# nicht datumswerte direkt...
+					# non date values taken directly
 					$dataRows{$row}{$headerColumn{$col}} = $value;
 				}
 				$maxRow = $row if $maxRow < $row;
@@ -317,7 +316,7 @@ sub row_handlerXLSX {
 	}
 }
 
-# read Excel file
+# read Excel file (format depends on setting)
 sub readExcel {
 	my ($File, $process, $filenames) = @_;
 	my $logger = get_logger();
@@ -645,7 +644,7 @@ sub writeText {
 __END__
 =head1 NAME
 
-ETL::Wrap::File - read Files from the filesystem or write to the filesystem
+ETL::Wrap::File - read/parse Files from the filesystem or write to the filesystem
 
 =head1 SYNOPSIS
 
@@ -656,29 +655,33 @@ ETL::Wrap::File - read Files from the filesystem or write to the filesystem
 
 =head1 DESCRIPTION
 
-=item readFile: liest das gewünschte datenfile mit spezifizierten Formaten in ein array of hashes (typische Datenbank datenstruktur)
+=item readText: reads the defined text file with specified parameters into array of hashes (DB ready structure)
 
- $File .. hash ref für die  Konfigurationsinfo und dann die abgelegten daten (hashkey "source" -> darin befindet sich oben angesprochenes array of hashes)
- $filenames .. Array von filenamen, falls explizit (wird von dumpFTPFiles angegeben für mget und entpacken von zip paketen).
+ $File      .. hash ref for File specific configuration
+ $process   .. hash ref for process specific configuration and returned data (hashkey "data" -> above mentioned array of hashes)
+ $filenames .. array of file names, if explizit (given in case of mget and unpacked zip archives).
 
-=item readExcel: liest das gewünschte excel file mit spezifizierten parametern in ein array of hashes (typische Datenbank datenstruktur)
+=item readExcel: reads the defined excel file with specified parameters into array of hashes (DB ready structure)
 
- $File .. hash ref für die  Konfigurationsinfo und dann die abgelegten daten (hashkey "source" -> darin befindet sich oben angesprochenes array of hashes)
- $filenames .. Array von filenamen, falls explizit (wird von dumpFTPFiles angegeben für mget und entpacken von zip paketen).
+ $File      .. hash ref for File specific configuration
+ $process   .. hash ref for process specific configuration and returned data (hashkey "data" -> above mentioned array of hashes)
+ $filenames .. array of file names, if explizit (given in case of mget and unpacked zip archives).
 
-=item cell_handler: callback funktion für zellen einlesen aus alten exceldateien
+=item cell_handler: callback event handler for readExcel (xls format)
 
-=item row_handlerXLSX: callback funktion für zeilen einlesen aus neuen exceldateien (xlsx format)
+=item row_handlerXLSX: callback event handler for readExcel (xlsx format)
 
-=item readXML: liest das gewünschte XML file mit spezifizierten parametern in ein array of hashes (typische Datenbank datenstruktur)
+=item readXML: reads the defined XML file with specified parameters into array of hashes (DB ready structure)
 
- $File .. hash ref für die  Konfigurationsinfo und dann die abgelegten daten (hashkey "source" -> darin befindet sich oben angesprochenes array of hashes)
- $filenames .. Array von filenamen, falls explizit (wird von dumpFTPFiles angegeben für mget und entpacken von zip paketen).
+ $File      .. hash ref for File specific configuration
+ $process   .. hash ref for process specific configuration and returned data (hashkey "data" -> above mentioned array of hashes)
+ $filenames .. Array von filenamen, falls explizit array of file names, if explizit (given in case of mget and unpacked zip archives).
 
-=item writeFile: Schreibt das gewünschte datenfile mit spezifizierten Formaten aus einem array of hashes (typische Datenbank datenstruktur)
+=item writeFile: writes a text file using specified parameters from array of hashes (DB structure) 
 
- $File .. hash ref für die  Konfigurationsinfo und die daten (hashkey "data" -> darin befindet sich oben angesprochenes array of hashes)
- 
+ $File      .. hash ref for File specific configuration
+ $process   .. hash ref for process specific configuration and returned data (hashkey "data" -> above mentioned array of hashes)
+
 =cut
 
 

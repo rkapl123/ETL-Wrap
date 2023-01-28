@@ -14,7 +14,7 @@ our %execute;
 our @ISA = qw(Exporter);
 our @EXPORT = qw(%common %config %execute @loads extractConfigs checkHash getLogFPathForMail getLogFPath MailFilter setErrSubject setupLogging setupStarting setupConfigMerge getOptions sendSuccessMail sendGeneralMail);
 
-# for commandline option parsing, these are merged into %config, %common and @loads
+# for command line option parsing, these are merged into %config, %common and @loads
 my @optload; my %opt;
 my @coreConfig = ("DB","File","FTP","process");
 my @extConfig = (@coreConfig,"config");
@@ -33,6 +33,7 @@ my %hashCheck = (
 		folderEnvironmentMapping => {Test => "Test", Dev => "Dev", "" => "Prod"},
 		logCheckHoliday => "",
 		logs_to_be_ignored_in_nonprod => '',
+		sensitive => [], # put keys of config sub-hash here that should not be logged as parameters at beginning
 		smtpServer => "",
 		smtpAuth => {user => '', pwd => ''},
 		smtpTimeout => 60,
@@ -104,7 +105,6 @@ my %hashCheck = (
 		columnnames => [],
 		cutoffYr2000 => 60,
 		database => "",
-		db => {user => "", pwd => ""},
 		debugKeyIndicator => "",
 		deleteBeforeInsertSelector => "",
 		dontWarnOnNotExistingFields => 0,
@@ -123,21 +123,23 @@ my %hashCheck = (
 		primkey => "",
 		query => "",
 		schemaName => "",
+		sensitive => [], # put keys of DB sub-hash here that should not be logged as parameters at beginning
 		server => {Prod => "", Test => ""},
 		tablename => "",
 		upsert => 1,
 		useKeyForDeleteBeforeInsert => 1,
 		updateIfInsertFails => 1,
+		db => {user => "", pwd => ""},
 	},
 	FTP => {
-		archiveFolder => "", # Ordner für archivierte files auf dem FTP server: "Archiv"
-		dontMoveTempImmediately => 1, # wenn 0 oder fehlt: files sofort (im Anschluss ans Schreiben auf den FTP) final umbenennen, ansonsten wird zur finalen Umbenennung der Aufruf von moveTempFiles benötigt.
-		dontDoSetStat => 1, # kein Setzen der Berechtigungen bzw. des Timestamps (zum Vermeiden von Fehlermeldungen bei manchen FTP Servern)
-		dontDoUtime => 1, # don't set timestamp of local file to that of remote file
+		archiveFolder => "", # folder for archived files on the FTP server
+		dontMoveTempImmediately => 1, # if 0 oder missing: rename/move files immediately after writing to FTP to the final name, otherwise (1) a call to moveTempFiles is required to do that
+		dontDoSetStat => 1, # no setting of time stamp of remote file to that of local file (avoid error messages of FTP Server if it doesn't support this)
+		dontDoUtime => 1, # don't set time stamp of local file to that of remote file
 		dontUseQuoteSystemForPwd => 0,
-		dontUseTempFile => 1, # direktes hinaufladen der Files, sonst vorgehen mit temp files
-		filenameToArchive => 1,
-		filenameToRemove => 1,
+		dontUseTempFile => 1, # directly upload files, without temp files
+		fileToArchive => 1,
+		fileToRemove => 1,
 		FTPdebugLevel => 0, # debug ftp: 0 or ~(1|2|4|8|16|1024|2048), loglevel automatically set to debug for module FTP
 		hostkey => "",
 		localDir => "",
@@ -156,9 +158,10 @@ my %hashCheck = (
 		remoteHost => {Prod => "", Test => ""}, # ref to hash of IP-addresses/DNS of host(s).
 		remove => {removeFolders => ["",""], day=>, mon=>, year=>1}, # for removing archived files on FTP hosts, removeFolders are the folders to be cleaned, day/mon/year is the days/months/years cutoff age for the removed files
 		simulate => 0, # only simulate (1) or do actually (0)?
+		sensitive => [], # put keys of FTP sub-hash here that should not be logged as parameters at beginning
 		type => "", # (A)scii or (B)inary
-		user => "",
-		ftp => {user => "", pwd => ""},
+		user => "", # set user directly
+		ftpPre => {user => "", pwd => ""}, # set user/pwd for prefix ftpPre
 	},
 	File => {
 		additionalColAction => "",
@@ -225,15 +228,15 @@ sub extractConfigs {
 # check config hash for validity against hashCheck (valid key entries are there + their valid value types (examples))
 sub checkHash {
 	my $logger = get_logger();
-	my ($hash, $hashName, $debugme) = @_;
+	my ($hash, $hashName) = @_;
 	my $locStr =  " when calling ".(caller(2))[3].", line ".(caller(2))[2]." in ".(caller(2))[1];
 	for my $defkey (keys %{$hash}) {
 		my $errStr;
 		if (!exists($hashCheck{$hashName}{$defkey})) {
-			$errStr = "not allowed: \$".$hashName."{".$defkey."},";
+			$errStr = "key name not allowed: \$".$hashName."{".$defkey."},";
 		} else {
-			$errStr = "wrong reference type for: \$".$hashName."{".$defkey."}" if ref($hashCheck{$hashName}{$defkey}) ne ref($hash->{$defkey});
-			$errStr = "wrong type for: \$".$hashName."{".$defkey."} when calling " if looks_like_number($hashCheck{$hashName}{$defkey}) ne looks_like_number($hash->{$defkey});
+			$errStr = "wrong reference type for value: \$".$hashName."{".$defkey."}" if ref($hashCheck{$hashName}{$defkey}) ne ref($hash->{$defkey});
+			$errStr = "wrong type for value: \$".$hashName."{".$defkey."} when calling " if looks_like_number($hashCheck{$hashName}{$defkey}) ne looks_like_number($hash->{$defkey});
 		}
 		if ($errStr) {
 			$logger->error($errStr.$locStr) if $logger;
@@ -463,58 +466,57 @@ ETL::Wrap::Common - Common parts for the ETL::Wrap package
  getLogFPathForMail
  getLogFPath
  MailFilter
- setupLogging $caller, $configFile
+ setupLogging $process
  setErrSubject $context
- setLogLevels 
- setupETLWrap
- sendGeneralMail $To, $Bcc, $Subject, $Type, $Data
+ setupStarting $process
+ setupConfigMerge
+ getOptions
  sendSuccessMail $filename
+ sendGeneralMail $From, $To, $Cc, $Bcc, $Subject, $Type, $Data, $Encoding, $AttachType, $AttachFile
 
 =head1 DESCRIPTION
 
-=item getLogFPathForMail, getLogFPath, MailFilter: Funktionen, die im zentralen log.config als codereferenz verwendet werden.
-=item getLogFPathForMail: für custom conversion specifiers: Pfad des logfiles bzw. des logfiles vom Vortag (als hyperlink)
-=item getLogFPath: für File appender config, der Pfad des aktuellen logfiles.
-=item MailFilter: für Mail appender config: Wann wird ein Mail verschickt? Beinhaltet auch die Drossel "alreadySent" für Massenfehler...
-=item setupLogging: set up logging from central log.config
-=item setErrSubject: setzt kontextspezifisches Subject für ErrorMail.
- $context .. Text für den Kontext des Subjects
+=item getLogFPathForMail, getLogFPath, MailFilter: funktions that are used in the central log.config as coderef.
+=item getLogFPathForMail: for custom conversion specifiers: path of logfiles resp logfiles of previous day (as file: hyperlink)
+=item getLogFPath: for file appender config, path of current logfile.
+=item MailFilter: for Mail appender config: used for filtering if mail should be sent? contains throttling "alreadySent" for mass errors
+=item setupLogging: set up logging from process config information and central log.config
+ $process .. config information
 
-=item readConfigFile: Einlesen, evaluieren des config files und initiale Verarbeitungen.
- $configFileOverride .. Name des configFiles, falls nicht ident mit dem Aufrufer von setupLogging
+=item setErrSubject: set context specific subject for ErrorMail
+ $context .. text for context of subject
+
+=item setupStarting: setup starting conditions from process config information and exit if met
+ $process .. config information
+
+=item setupConfigMerge: creates cascading inheritance of DB/File/FTP settings: %config -> %common -> $loads[] <- options from command line (latter takes more precedence)
+=item getOptions: get options for overriding configured settings
+=item sendSuccessMail: send mail to configured errmailadress when a repeated processing is successful
+ $filename .. file being processed successfully
+
+=item sendGeneralMail: send general mail, either simple text or html mails, mails with an attachment or multipart mails for "in-body" attachments (eg pictures). 
+ In this case the mail body needs to be HTML, attachments are referred to inside the HTML code and are passed as a ref to array of paths in $AttachFile.
  
-=item setLogLevels: Setze loglevels für alle Module oder bestimmte in dem file mit Namen $loglevel (debug oder trace) ausgewählte Module.
- $loglevel .. loglevel, der gesetzt werden soll ("debug" oder "trace": dazu muss jeweils ein file (namens debug bzw. trace) im Verzeichnis existieren mit folgendem Inhalt (Zeilen): Module, die den debug oder trace level haben sollen); loglevel info wird ohne file gesetzt)
-
-=item sendSuccessMail: Sende Mail an $errmailadress bei erfolgreicher Wiederholungsverarbeitung
- $filename .. File das bei Wiederholung verarbeitet wurde
-
-=item sendGeneralMail: Sende allgemeines Mail, entweder einfache text bzw. html mails, Mails mit einem Attachment oder multipart Mails für "in-body" attachments (zb bilder). 
- In diesem Fall wird angenommen, dass der Mailbody HTML ist, die Attachments darin verwiesen werden und im $AttachFile als ref to array von pfadangaben mitgegeben werden.
- Beispiel:
+ Example:
+ # prepare body with refererring to attachments in a HTML table
  my $body='<style>table, th, td {border: 1px solid black;border-collapse: collapse;} th, td {padding: 5px;text-align: right;}}</style>';
  $body.='<table style="width:1600px; border:0; text-align:center;" cellpadding="0" cellspacing="0">
- <tr><td width="800px" height="800px"><img style="display:block;"  width="100%" height="100%" src="cid:ATST01D_Verteilung.png" alt="ATST01D_Verteilung"/></td></tr>';
- # Benötigte Files mitgeben an sendGeneralMail
+ <tr><td width="800px" height="800px"><img style="display:block;"  width="100%" height="100%" src="cid:relativePathToPic.png" alt="alternateDescriptionOfPic"/></td></tr>';
+ # pass needed files to sendGeneralMail:
  my @filelist = glob("*.png");
-
- LogCfgUtil::sendGeneralMail(undef,'CONTROLLING@oebfa.at',undef,undef,"Zinsszenarien erstellt, anbei Übersicht",'multipart/related',$body,'quoted-printable','image/png',\@filelist);
- $From .. Sender (wenn leer, dann noreply.pl@oebfa.at)
- $To .. Empfänger
- $Cc .. Cc empfänger (optional aber als Argument zu setzen)
- $Bcc .. Bcc empfänger (optional aber als Argument zu setzen)
- $Subject .. Mail subject
- $Type .. Mailtyp (z.b. text/plain, text/html oder 'multipart/related'), wenn 'multipart/related', dann wird in $AttachFile ein ref to array auf die filenamen (pfad), die anzuhängen sind angenommen. 
- Hier wird dann der Mailbody ($Data) als eigenes/erstes Attachment angehängt und dessen Type auf text/html gesetzt. Die restlichen Attachments aus $AttachFile werden mit Encoding base64 und dem gleichen AttachType angehängt.
- $Data .. Mailbody
- $Encoding .. Encoding für Mailbody, optional (zb quoted-printable)
- $AttachType .. Typ für Attachment (zb text/csv oder image/png), optional
- $AttachFile .. Filename/pfad für Attachment, optional (muss ein ref to array sein, wenn $Type = 'multipart/related')
-
-=item setupETLWrap: Einlesen des parameter files für checkLogExist.pl und der zentral gewarteten Mailadressen/Subjects für die Errormails aus dumpFTPFiles.pl/uploadFTPFiles.pl
- $parm->{"CheckParamFile"} .. zentrales parameter file für checkLogExist und auch Mailadressen, an die Errormails geschickt werden sollen
- $logFileToCheck,$freqToCheck,$timeToCheck,$mailAddressToSend,$logcheck .. die lookups für die Verwendung in checkLogExist.pl (Rückgabeparameter)
- $configMailLookup .. lookup der zentralen Mailadressen, an die Fehlermails geschickt werden sollen (Schlüssel: Konfigurationsfile + potentielle subkonfig(s)). Wenn nicht angegeben, dann Name des configFiles (angegeben beim Aufruf von setupLogging)
+ # call sendGeneralMail with prepared parmaters
+ sendGeneralMail(undef,'address@somewhere.com',undef,undef,"subject for mail",'multipart/related',$body,'quoted-printable','image/png',\@filelist);
+ $From .. sender
+ $To .. recipient
+ $Cc .. cc recipient (optional, but need arg)
+ $Bcc .. mcc recipient  (optional, but need arg)
+ $Subject .. mail subject
+ $Type .. mail mime type (eg text/plain, text/html oder 'multipart/related'), if 'multipart/related', then a ref to array to the filenames (path), that should be attached is expected to be set in $AttachFile. 
+ In the above example a mail body ($Data) is being set as the first attachment and its type is text/html. The rest of the attachments from $AttachFile are encoded using base64 and all have mime type AttachType (see below).
+ $Data .. the mail body, either plain text or html.
+ $Encoding .. encoding for mail body, optional (eg quoted-printable)
+ $AttachType .. mime type for attachment(s) (eg text/csv or image/png), optional
+ $AttachFile .. file name/path(s) for attachment(s), optional (hat to be ref to array, if $Type = 'multipart/related')
 
 =head1 COPYRIGHT
 
