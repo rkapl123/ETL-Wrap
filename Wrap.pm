@@ -66,15 +66,8 @@ sub setupETLWrap {
 	ETL::Wrap::Common::setupLogging(\%common);
 	# starting log entry: scriptname + parameters, first remove sensitive information.
 	$Data::Dumper::Indent = 0;
-	my $logger = get_logger();
-	my $VAR1;
-	my $configdump = Dumper(\%common);
-	eval $configdump;
-	for my $mainCat (keys %common) {
-		my @sensitiveKeys = @{$common{$mainCat}{sensitive}} if $common{$mainCat}{sensitive};
-		undef $VAR1->{$mainCat}{$_} for (@sensitiveKeys);
-	}
-	$logger->info("======> started ".$execute{scriptname}.", parameters: ".Dumper($VAR1));
+	my $configdump = Dumper(\%common); $configdump =~ s/\s+//g;$configdump =~ s/\$VAR1=//;$configdump =~ s/'/,/g;
+	get_logger()->info("======> started ".$execute{scriptname}.", parameters: ".$configdump);
 	$Data::Dumper::Indent = 2;
 	ETL::Wrap::Common::setupStarting(\%common);
 	ETL::Wrap::Common::checkHash(\%config,"config");

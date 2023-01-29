@@ -33,7 +33,7 @@ my %hashCheck = (
 		folderEnvironmentMapping => {Test => "Test", Dev => "Dev", "" => "Prod"},
 		logCheckHoliday => "",
 		logs_to_be_ignored_in_nonprod => '',
-		sensitive => [], # put keys of config sub-hash here that should not be logged as parameters at beginning
+		sensitive => {}, # sensitive information, may also be placed outside of site.config
 		smtpServer => "",
 		smtpAuth => {user => '', pwd => ''},
 		smtpTimeout => 60,
@@ -123,7 +123,6 @@ my %hashCheck = (
 		primkey => "",
 		query => "",
 		schemaName => "",
-		sensitive => [], # put keys of DB sub-hash here that should not be logged as parameters at beginning
 		server => {Prod => "", Test => ""},
 		tablename => "",
 		upsert => 1,
@@ -158,7 +157,6 @@ my %hashCheck = (
 		remoteHost => {Prod => "", Test => ""}, # ref to hash of IP-addresses/DNS of host(s).
 		remove => {removeFolders => ["",""], day=>, mon=>, year=>1}, # for removing archived files on FTP hosts, removeFolders are the folders to be cleaned, day/mon/year is the days/months/years cutoff age for the removed files
 		simulate => 0, # only simulate (1) or do actually (0)?
-		sensitive => [], # put keys of FTP sub-hash here that should not be logged as parameters at beginning
 		type => "", # (A)scii or (B)inary
 		user => "", # set user directly
 		ftpPre => {user => "", pwd => ""}, # set user/pwd for prefix ftpPre
@@ -281,7 +279,7 @@ sub setupLogging {
 	$LogFPathDayBefore = $logFolder.get_curdate().".".$caller.".log"; # if mail is watched next day, show the rolled file here
 	die "no log.config existing in ".$ENV{ETL_WRAP_CONFIG_PATH}."/".$execute{envraw}."/log.config" if  (! -e $ENV{ETL_WRAP_CONFIG_PATH}."/".$execute{envraw}."/log.config");
 	Log::Log4perl::init($ENV{ETL_WRAP_CONFIG_PATH}."/".$execute{envraw}."/log.config"); # environment dependent log config, Prod is in ETL_WRAP_CONFIG_PATH
-	MIME::Lite->send('smtp', $config{smtpServer}, AuthUser=>$config{smtpAuth}{user}, AuthPass=>$config{smtpAuth}{pwd}, Timeout=>$config{smtpTimeout}); # configure err mail sending
+	MIME::Lite->send('smtp', $config{smtpServer}, AuthUser=>$config{sensitive}{smtpAuth}{user}, AuthPass=>$config{sensitive}{smtpAuth}{pwd}, Timeout=>$config{smtpTimeout}); # configure err mail sending
 
 	# get email from central log error handling $config{checkLookup}{<>};
 	$execute{errmailaddress} = $config{checkLookup}{$execute{scriptname}}{errmailaddress}; # errmailaddress for the process script

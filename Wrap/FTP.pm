@@ -275,11 +275,11 @@ sub login {
 	my $plinkInstallationPath = $FTP->{plinkInstallationPath};
 	# only for set prefix, take username and password from $FTP->{$FTP->{prefix}}
 	if ($FTP->{prefix}) {
-		$user = $FTP->{$FTP->{prefix}}{user};
-		$pwd = $FTP->{$FTP->{prefix}}{pwd};
+		$user = $config{sensitive}{$FTP->{prefix}}{user};
+		$pwd = $config{sensitive}{$FTP->{prefix}}{pwd};
 	}
 	(!$FTP->{user} && !$user) and do {
-		$logger->error("user neither set in \$FTP->{user} nor in \$FTP->{".$FTP->{prefix}."}{user} !");
+		$logger->error("user neither set in \$FTP->{user} nor in \$config{sensitive}{".$FTP->{prefix}."}{user} !");
 		return 0;
 	};
 	# for unstable connections, retry connecting max $maxConnectionTries.

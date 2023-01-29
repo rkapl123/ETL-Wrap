@@ -4,7 +4,7 @@ use strict;
 use Time::Local; use Time::localtime; use Exporter; use POSIX qw(mktime);
 
 our @ISA = qw(Exporter);
-our @EXPORT = qw(%months %monate get_curdate get_curdatetime get_curdate_dot formatDate formatDateFromYYYYMMDD get_curdate_dash get_curdate_gen get_curdate_dash_plus_X_years get_curtime get_curtime_HHMM get_lastdateYYYYMMDD get_lastdateDDMMYYYY is_first_day_of_month is_last_day_of_month get_last_day_of_month weekday is_weekend is_holiday first_week first_weekYYYYMMDD last_week last_weekYYYYMMDD convertDate convertDateFromMMM convertDateToMMM convertToDDMMYYYY addDays addDaysHol addMonths subtractDays subtractDaysHol convertcomma getInteractiveDate convertToThousendDecimal get_dateseries parseFromDDMMYYYY parseFromYYYYMMDD convertEpochToYYYYMMDD);
+our @EXPORT = qw(%months %monate get_curdate get_curdatetime get_curdate_dot formatDate formatDateFromYYYYMMDD get_curdate_dash get_curdate_gen get_curdate_dash_plus_X_years get_curtime get_curtime_HHMM get_lastdateYYYYMMDD get_lastdateDDMMYYYY is_first_day_of_month is_last_day_of_month get_last_day_of_month weekday is_weekend is_holiday first_week first_weekYYYYMMDD last_week last_weekYYYYMMDD convertDate convertDateFromMMM convertDateToMMM convertToDDMMYYYY addDays addDaysHol addMonths subtractDays subtractDaysHol convertcomma convertToThousendDecimal get_dateseries parseFromDDMMYYYY parseFromYYYYMMDD convertEpochToYYYYMMDD);
 
 our %months = ("Jan" => "01","Feb" => "02","Mar" => "03","Apr" => "04","May" => "05","Jun" => "06","Jul" => "07","Aug" => "08","Sep" => "09","Oct" => "10","Nov" => "11","Dec" => "12");
 our %monate = ("Jan" => "01","Feb" => "02","Mär" => "03","Apr" => "04","Mai" => "05","Jun" => "06","Jul" => "07","Aug" => "08","Sep" => "09","Okt" => "10","Nov" => "11","Dez" => "12");
@@ -93,7 +93,7 @@ sub is_first_day_of_month {
 sub is_last_day_of_month {
 	my ($y,$m,$d) = $_[0] =~ /(.{4})(..)(..)/;
 	my $hol = $_[1];
-	# für Berücksichtigung Feiertage 1 Tag dazugeben und Monat vergleichen
+	# for respecting holidays add 1 day and compare month
 	if ($hol) {
 		my $shiftedDate = addDaysHol($_[0],1,"YMD",$hol);
 		my ($ys,$ms,$ds) = $shiftedDate =~ /(.{4})(..)(..)/;
@@ -105,15 +105,15 @@ sub is_last_day_of_month {
 sub get_last_day_of_month {
 	my ($y,$m,$d) = $_[0] =~ /(.{4})(..)(..)/;
 	
-	# erster des folgemonats minus 1 Tag ist immer der letzte des aktuellen Monats, timegm erwartet monat 0 basiert, daher ist $m für timegm der folgemonat.
+	# first of following month minus 1 day is always last of current month, timegm expects 0 based month, $m is the following month for timegm therefore
 	if ($m == 12) {
-		# Für Dezember -> januar nächstes Jahr
-		$m = 0; # monat ist 0 basiert !
+		# for December -> January next year
+		$m = 0; # month 0 based
 		$y++;
 	}
 	my $mon = (gmtime(timegm(0,0,12,1,$m,$y) - 24*60*60))[4]+1;
 	my $day = (gmtime(timegm(0,0,12,1,$m,$y) - 24*60*60))[3];
-	$y-- if $m == 0; # Für Dezember -> nächstes Jahr wieder zurücksetzen
+	$y-- if $m == 0; # for December -> reset year again
 	return sprintf("%04d%02d%02d",$y, $mon, $day);
 }
 
@@ -126,7 +126,7 @@ sub is_weekend {
 	my ($y,$m,$d) = $_[0] =~ /(.{4})(..)(..)/;
 	(gmtime(timegm(0,0,12,$d,$m-1,$y)))[6] =~ /(0|6)/;
 }
-# makeMD: argument in timegm form (datetime), Rückgabe Datum in format DDMM (für holiday rechnung (siehe unten))
+# makeMD: argument in timegm form (datetime), returns date in format DDMM (for holiday calculation)
 sub makeMD {
 	sprintf("%02d%02d", (gmtime($_[0]))[3],(gmtime($_[0]))[4] + 1);
 }
@@ -139,28 +139,28 @@ sub is_holiday {
 		return 0;
 	}
 	my ($y,$m,$d) = $_[1] =~ /(.{4})(..)(..)/;
-	# fixe Feiertage
+	# fixes holidays
 	my $fixedHol = {"BS"=>{"0101"=>1,"0601"=>1,"0105"=>1,"1508"=>1,"2610"=>1,"0111"=>1,"0812"=>1,"2412"=>1,"2512"=>1,"2612"=>1},
 					"BF"=>{"0101"=>1,"0601"=>1,"0105"=>1,"1508"=>1,"2610"=>1,"0111"=>1,"0812"=>1,"2412"=>1,"2512"=>1,"2612"=>1},
 					"AT"=>{"0101"=>1,"0601"=>1,"0105"=>1,"1508"=>1,"2610"=>1,"0111"=>1,"0812"=>1,"2512"=>1,"2612"=>1},
 					"TG"=>{"0101"=>1,"0105"=>1,"2512"=>1,"2612"=>1},
 					"UK"=>{"0101"=>1,"2512"=>1,"2612"=>1}};
-	# Osterkreis, zuerst Ostersonntag ermitteln...
+	# easter, first find easter sunday
 	my $D = (((255 - 11 * ($y % 19)) - 21) % 30) + 21;
 	my $easter = timegm(0,0,12,1,2,$y) + ($D + ($D > 48 ? 1 : 0) + 6 - (($y + int($y / 4) + $D + ($D > 48 ? 1 : 0) + 1) % 7))*86400;
-	# Dann die davon abhängigen...
+	# then the rest
 	my $goodfriday=makeMD($easter-2*86400);
 	my $easterMonday=makeMD($easter+1*86400);
 	my $ascensionday=makeMD($easter+39*86400);
 	my $whitmonday=makeMD($easter+50*86400);
 	my $corpuschristiday=makeMD($easter+60*86400);
-	# je nach Kalender eintragen
+	# enter as required for calendar
 	my $easterHol = {"BS"=>{$easterMonday=>1,$ascensionday=>1,$whitmonday=>1,$corpuschristiday=>1,$goodfriday=>1},
 					 "BF"=>{$easterMonday=>1,$ascensionday=>1,$whitmonday=>1,$corpuschristiday=>1},
 					 "AT"=>{$easterMonday=>1,$ascensionday=>1,$whitmonday=>1,$corpuschristiday=>1},
 					 "TG"=>{$easterMonday=>1,$goodfriday=>1},
 					 "UK"=>{$easterMonday=>1,$goodfriday=>1}};
-	# britische Sonderbarkeiten...
+	# British specialties
 	my $specialHol = 0;
 	$specialHol = (first_week($d,$m,$y,1,5) || last_week($d,$m,$y,1,5) || last_week($d,$m,$y,1,8)) if ($hol eq "UK");
 	if ($fixedHol->{$hol}->{$d.$m} or $easterHol->{$hol}->{$d.$m} or $specialHol) {
@@ -239,7 +239,7 @@ sub addDays {
 	my $curDateEpoch = timelocal(0,0,0,$$day,$$mon-1,$$year-1900);
 	my $diffDate = localtime($curDateEpoch + $dayDiff * 60 * 60 * 25);
 	my @months = ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec');
-	# dereferenzieren, damit die übergebene Variable geändert wird.
+	# dereference, so the passed variable is changed
 	$$year = $diffDate->year+1900;
 	$$mon = $diffDate->mon+1;
 	$$day = $diffDate->mday;
@@ -257,9 +257,9 @@ sub subtractDaysHol {
 	my ($date,$days,$template,$hol) = @_;
 	$hol="AT" if !$hol;
 	my ($y,$m,$d) = $date =~ /(.{4})(..)(..)/;
-	# zuerst Tage abziehen
+	# first subtract days
 	my $refdate = localtime(timelocal(0,0,12,$d,$m-1,$y) - $days*24*60*60);
-	# dann weiter Tage abziehen, solange Wochenende oder Feiertag
+	# then subtract further days as long weekend or holidays
 	if ($hol ne "NO") {
 		while ($refdate->wday() == 0 || $refdate->wday() == 6 || is_holiday($hol, sprintf("%04d%02d%02d", $refdate->year()+1900, $refdate->mon()+1, $refdate->mday()))) {
 			$refdate = localtime(timelocal(0,0,12,$refdate->mday(),$refdate->mon(),$refdate->year()+1900) - 24*60*60);
@@ -272,9 +272,9 @@ sub addDaysHol {
 	my ($date, $days, $template, $hol) = @_;
 	$hol="AT" if !$hol;
 	my ($y,$m,$d) = $date =~ /(.{4})(..)(..)/;
-	# zuerst Tage hinzufügen
+	# first add days
 	my $refdate = localtime(timelocal(0,0,12,$d,$m-1,$y) + $days*24*60*60);
-	# dann weiter Tage hinzufügen, solange Wochenende oder Feiertag
+	# then add further days as long weekend or holidays
 	if ($hol ne "NO") {
 		while ($refdate->wday() == 0 || $refdate->wday() == 6 || is_holiday($hol,sprintf("%04d%02d%02d", $refdate->year()+1900, $refdate->mon()+1, $refdate->mday()))) {
 			$refdate = localtime(timelocal(0,0,12,$refdate->mday(),$refdate->mon(),$refdate->year()+1900) + 24*60*60);
@@ -312,40 +312,16 @@ sub convertcomma {
 	return $number;
 }
 
-sub getInteractiveDate {
-	my ($daysback,$template) = @_;
-	# mon und year werden hier nicht adjustiert, da nur relativ (adjustierung erfolgt dann beim Setzen des $defaultValue). Wochentag (wday) ist eh aktuell, d.h. das Abziehen des Wochenendes stimmt.
-	my $lastBusinessDate = localtime(timelocal(0,0,12,localtime->mday(),localtime->mon(),localtime->year()) - (localtime->wday() == 1  && $daysback>0 ? 2 + $daysback : $daysback)*24*60*60);
-	my $defaultValue = $lastBusinessDate->mday();
-	print "Datumseingabe Tag:", "[", $defaultValue, "]: ";
-	$| = 1; # autoflush notwendig, da print nicht mit newline abgeschlossen und daher sonst nichts ausgegeben wird (STDOUT will typically be line buffered if output is to the terminal and block buffered otherwise.)
-	my $fromDay = <STDIN>; # von shell input einlesen
-	chomp $fromDay; # übergebenes newline weg
-	$fromDay = $defaultValue if !$fromDay;
-	my $defaultValue = $lastBusinessDate->mon()+1;
-	print "Datumseingabe Monat:", "[", $defaultValue, "]: ";
-	$| = 1;
-	my $fromMonth = <STDIN>;
-	chomp $fromMonth;
-	$fromMonth = $defaultValue if !$fromMonth;
-	my $defaultValue = $lastBusinessDate->year()+1900;
-	print "Datumseingabe Jahr:", "[", $defaultValue, "]: ";
-	$| = 1;
-	my $fromYear = <STDIN>;
-	chomp $fromYear;
-	$fromYear = $defaultValue if !$fromYear;
-	return formatDate($fromYear,$fromMonth,$fromDay,$template);
-}
-
+# converts $value into German format decimal separated by thousand divider
 sub convertToThousendDecimal {
 	my ($value,$ignoreDecimal) = @_;
-	# hole vor- und nachkommastellen (optional getrennt durch ".")
+	# get digits before decimal point and after (optionally divided by thousand separator ".")
 	my ($intplaces,$decplaces) = $value =~ /(\d*)\.(\d*)/ if $value =~ /\./;
 	if ($value !~ /\./) {
 		$intplaces = $value;
 		$decplaces = "0";
 	}
-	# konvertiere vorkommastellen in tausender getrennt
+	# converts digits before decimal point to thousand separated number
 	my $quantity = reverse join '.', unpack '(A3)*', reverse $intplaces;
 	$quantity = $quantity.($ignoreDecimal ? "" : ",".$decplaces);
 	return $quantity;
@@ -398,7 +374,7 @@ sub convertEpochToYYYYMMDD {
 __END__
 =head1 NAME
 
-ETL::Wrap::DateUtil - Datums- und Zeit Hilfsfunktionen
+ETL::Wrap::DateUtil - Date and Time helping functions
 
 =head1 SYNOPSIS
 
@@ -446,24 +422,24 @@ ETL::Wrap::DateUtil - Datums- und Zeit Hilfsfunktionen
 
 =head1 DESCRIPTION
 
-=item %months: Umrechnung Englische Monate -> Ziffern, Verwendung: $months{"Oct"} (ergibt 10)
+=item %months: conversion hash english months -> numbers, usage: $months{"Oct"} equals 10
 
-=item %monate: Umrechnung Deutsche Monate -> Ziffern, Verwendung: $monate{"Okt"} (ergibt 10)
+=item %monate: conversion hash german months -> numbers, usage: $monate{"Okt"} equals 10
 
-=item get_curdate: Ergebnis: aktuelles datum im format YYYYMMDD
+=item get_curdate: gets current date in format YYYYMMDD
 
-=item get_curdatetime: Ergebnis: aktuelle datumzeit im format YYYYMMDD_HHMMSS
+=item get_curdatetime: gets current datetime in format YYYYMMDD_HHMMSS
 
-=item get_curdate_dot: Ergebnis: aktuelles datum im format DD.MM.YYYY
+=item get_curdate_dot: gets current date in format DD.MM.YYYY
 
-=item formatDate: Ergebnis: übergebenes datum (argumente $y,$m,$d) im format wie definiert in $template
+=item formatDate: formats passed (arguments $y,$m,$d) into format as defined in $template
 
- $d .. tagesteil
- $m .. monatsteil
- $y .. jahresteil
- $template .. optional, Datumsformatvorlage mit D für Tag, M für Monat und Y für Jahr (z.b. D.M.Y für 01.02.2016),
-              D und M werden immer 2 stellig, Y wird immer vierstellig ersetzt; wenn leer/nicht vorhanden wird "YMD" angenommen. 
-              Spezielle Formate sind MMM und mmm als monatsteil, hier werden dreistellige Monatskürzel englisch (MMM) bzw. deutsch (mmm) als monat zurückgegeben.
+ $d .. day part
+ $m .. month part
+ $y .. year part
+ $template .. optional, date template with D for day, M for month and Y for year (e.g. D.M.Y for 01.02.2016),
+              D and M is always 2 digit, Y always 4 digit; if empty/nonexistent defaults to "YMD"
+              special formats are MMM und mmm als monthpart, here three letter month abbreviations in englisch (MMM) or german (mmm) are returned as month
 
 =item formatDateFromYYYYMMDD: Ergebnis: übergebenes datum (argument $datum) im format wie definiert in $template
 
