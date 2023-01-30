@@ -321,7 +321,7 @@ sub readExcel {
 	my ($File, $process, $filenames) = @_;
 	my $logger = get_logger();
 	$stopOnEmptyValueColumn = $File->{format}{stopOnEmptyValueColumn};
-	$stoppedOnEmptyValue = 0; # Rücksetzen
+	$stoppedOnEmptyValue = 0; # reset
 	my @filenames = @{$filenames} if $filenames;
 	my $redoSubDir = $process->{redoDir}."/" if $process->{redoFile};
 	my $lineProcessing = $File->{LineCode};
@@ -353,62 +353,62 @@ sub readExcel {
 			$logger->error("keine format definitionen gefunden !!");
 			return 0;
 		}
-		# vorhandener sync header (finale feldbezeichnungen für Datenbank) definiert immer header !
+		# sync header (finale field names for database) always defines header !
 		$File->{headings} = \@syncheader;
-		# Excelfile prüfen
+		# check excel file existence
 		if (! -e $redoSubDir.$filename) {
 			$logger->error("kein excel file ($filename) zu verarbeiten...") unless ($File->{optional});
 			$logger->warn("kein file $redoSubDir$filename gefunden... "); # nur fürs protokoll (kein mail oder so)
 			return 0;
 		}
-		# datumsfelder lookup vorbereiten
+		# prepare date field lookup
 		if ($File->{format}{dateColumns}) {
 			for my $col (@{$File->{format}{dateColumns}}) {
 				$dateColumn{$col} = 1;
 			}
 		}
-		# spaltenlookups (headerColumn: gewünschte excel spaltenziffer -> zielfeldname bzw. xlheader: spaltenziffer -> erwarteter header inhalt) vorbereiten
+		# prepare column lookups (headerColumn: needed excel column -> target field name resp. xlheader: column -> expected header content)
 		my $i=0;
 		for my $col (@{$File->{format}{headerColumns}}) {
 			$headerColumn{$col} = $syncheader[$i];
 			$xlheader{$col} = $header[$i];
 			$i++;
 		}
-		# für die weitere verarbeitung ersetzt syncheader die erwarteten header...
+
 		@header = @syncheader;
 		my $parser;
 		if ($File->{format}{xlsx}) {
-			$logger->info("öffne xlsx file $redoSubDir$filename ... ");
+			$logger->info("open xlsx file $redoSubDir$filename ... ");
 			$parser = Data::XLSX::Parser->new;
 			$parser->open($redoSubDir.$filename);
 			$parser->add_row_event_handler(\&row_handlerXLSX);
 
 			if ($File->{format}{worksheet}) {
 				$worksheet = $parser->workbook->sheet_id($File->{format}{worksheet});
-				$logger->logdie("kein worksheet mit namen ".$File->{format}{worksheet}." gefunden, evtl. ist die Angabe der {format}{worksheetID} (numerische Stellung des Sheet im Workbook) besser?") if !$worksheet;
+				$logger->logdie("no worksheet found named ".$File->{format}{worksheet}.", maybe try {format}{worksheetID} (numerically ordered place)") if !$worksheet;
 			} elsif ($File->{format}{worksheetID}) {
 				$worksheet = $File->{format}{worksheetID};
 			} else {
-				$logger->logdie("weder worksheetname noch worksheetID (numerische Stellung des Sheet im Workbook) angegeben !");
+				$logger->logdie("neither worksheetname nor worksheetID (numerically ordered place) given");
 			}
-			$logger->info("starte parser für sheet name: ".$File->{format}{worksheet}.", id:".$worksheet);
+			$logger->info("starting parser for sheet name: ".$File->{format}{worksheet}.", id:".$worksheet);
 			$parser->sheet_by_id($worksheet);
 		} else {
-			$logger->warn("worksheets können für das alte xls format nicht nach Name gefunden werden, bitte {format}{worksheetID} (numerische Stellung des Sheet im Workbook) angeben..") if ($File->{format}{worksheet});
+			$logger->warn("worksheets can't be found by name for the old xls format, please pass numerically ordered place in {format}{worksheetID}") if ($File->{format}{worksheet});
 			$worksheet = $File->{format}{worksheetID} if $File->{format}{worksheetID};
-			$logger->info("starte parser für xls file $redoSubDir$filename ... ");
+			$logger->info("starting parser for xls file $redoSubDir$filename ... ");
 			$parser = Spreadsheet::ParseExcel->new(
 				CellHandler => \&cell_handler,
 				NotSetCell  => 1
 			);
 			my $workbook = $parser->parse($redoSubDir.$filename);
 			if ( !defined $workbook ) {
-				$logger->error("excel parsing fehler: ".$parser->error());
+				$logger->error("excel parsing error: ".$parser->error());
 				return 0;
 			}
 		}
 
-		# durch alle zeilen iterieren ...
+		# iterate rows
 		my (@line,@previousline);
 LINE:
 		for my $lineno ($startRow+1 .. $maxRow) {
@@ -508,24 +508,23 @@ sub readXML {
 		# reset module global variables
 		%headerColumn = undef;
 		%dataRows = undef;
-
 		# read format configuration
 		my (@header, @syncheader);
 		if (ref($File->{format}) eq "HASH") {
 			my $sep = "\t";
-			$logger->error("keine header definiert") if !$File->{format}{header};
+			$logger->error("no header defined") if !$File->{format}{header};
 			@header = split $sep, $File->{format}{header};
 			$logger->debug("header: @header \nlineProcessing:".$File->{LineCode}."\nfieldProcessing:".$File->{FieldCode}."\nfieldProcessingSpec:".Dumper($File->{FieldCodeSpec})."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing});
 		} else {
-			$logger->error("keine format definitionen gefunden !!");
+			$logger->error("no format definitions found");
 			return 0;
 		}
 		$File->{headings} = \@header;
 
 		# check file
 		if (! -e $redoSubDir.$filename) {
-			$logger->error("kein XML file ($filename) zu verarbeiten...") unless ($File->{optional});
-			$logger->warn("kein file $redoSubDir$filename gefunden... "); # nur fürs protokoll (kein mail oder so)
+			$logger->error("no XML file ($filename) to process") unless ($File->{optional});
+			$logger->warn("file $redoSubDir$filename not found");
 			return 0;
 		}
 
@@ -534,10 +533,10 @@ sub readXML {
 		if (ref($File->{format}{namespaces}) eq 'HASH') {
 			$xpc->registerNs($_, $File->{format}{namespaces}{$_}) for keys (%{$File->{format}{namespaces}});
 		}
-		$logger->error("kein xpathRecordLevel gegeben in format ...") unless ($File->{format}{xpathRecordLevel});
-		$logger->error("kein fieldXpath hash gegeben in format ...") unless ($File->{format}{fieldXpath} && ref($File->{format}{fieldXpath}) eq 'HASH');
+		$logger->error("no xpathRecordLevel passed in format") unless ($File->{format}{xpathRecordLevel});
+		$logger->error("no fieldXpath hash passed in format") unless ($File->{format}{fieldXpath} && ref($File->{format}{fieldXpath}) eq 'HASH');
 		my @records = $xpc->findnodes($File->{format}{xpathRecordLevel});
-		$logger->warn("no records found ...") if @records == 0;
+		$logger->warn("no records found") if @records == 0;
 		foreach my $record (@records) {
 			my %line;
 			if (ref($record) eq "XML::LibXML::Element") {
@@ -555,7 +554,7 @@ sub readXML {
 			push @{$process->{data}}, \%line if %line;
 		}
 		if (!$process->{data} and !$File->{emptyOK}) {
-			$logger->error("Empty file: $filename, no data returned !!");
+			$logger->error("empty file: $filename, no data returned");
 			return 0;
 		}
 	}
