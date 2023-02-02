@@ -10,7 +10,7 @@ my $dbh;
 my $DSN;
 
 sub newDBH {
-	my ($DB,$execute) = @_;
+	my ($DB,$execute,$user,$pwd) = @_;
 	my $logger = get_logger();
 	my ($DSNeval, $newDSN);
 	$DSNeval = ($DB->{isTrusted} ? $DB->{DSNTrusted} : $DB->{DSNUntrusted});

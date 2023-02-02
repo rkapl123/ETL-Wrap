@@ -70,7 +70,6 @@ use ETL::Wrap; use Data::Dumper;
 );
 $loads[0]{File}{lineCode} = <<'END';
 	$line{"Monatsletzter"} = 0;
-	# verbundene Zusatztabelle BSKapitalstand befüllen (tägliche Änderungen des Kapitalstands)
 	my %linkedKapital;
 	$linkedKapital{"Registerkonto"} = $line{"Registerkonto"};
 	$linkedKapital{"InhaberNummer"} = $line{"InhaberNummer"};

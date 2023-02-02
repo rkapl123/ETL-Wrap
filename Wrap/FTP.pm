@@ -256,8 +256,7 @@ sub archiveFiles {
 
 # login, creating a new ftp connection
 sub login {
-	my ($FTP,$execute) = @_;
-	my ($user,$pwd);
+	my ($FTP,$execute,$user,$pwd) = @_;
 	my $logger = get_logger();
 	if ($RemoteHost ne $FTP->{remoteHost}{$execute->{env}} or !defined($ftp)) {
 		$RemoteHost = $FTP->{remoteHost}{$execute->{env}};
@@ -273,15 +272,7 @@ sub login {
 	};
 	my $maxConnectionTries = $FTP->{maxConnectionTries};
 	my $plinkInstallationPath = $FTP->{plinkInstallationPath};
-	# only for set prefix, take username and password from $FTP->{$FTP->{prefix}}
-	if ($FTP->{prefix}) {
-		$user = $config{sensitive}{$FTP->{prefix}}{user};
-		$pwd = $config{sensitive}{$FTP->{prefix}}{pwd};
-	}
-	(!$FTP->{user} && !$user) and do {
-		$logger->error("user neither set in \$FTP->{user} nor in \$config{sensitive}{".$FTP->{prefix}."}{user} !");
-		return 0;
-	};
+
 	# for unstable connections, retry connecting max $maxConnectionTries.
 	my $connectionTries = 0;
 	# quote passwords containing chars that can't be passed via windows shell to ssh_cmd (\"....\>...\")

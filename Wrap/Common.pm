@@ -182,6 +182,7 @@ my %hashCheck = (
 		firstLineProc => '',
 		format => {
 			header => "",
+			targetheader => "",
 			sep => "",
 			sepHead => "",
 			skip => 2,
@@ -189,7 +190,6 @@ my %hashCheck = (
 			xlsx => 1,
 			XML => 1,
 		},
-		headings => [],
 		lineCode => "",
 		locale => "",
 		localFilesystemPath => "",

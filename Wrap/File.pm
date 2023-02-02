@@ -15,51 +15,48 @@ sub readText {
 	my @filenames = @{$filenames} if $filenames;
 	my $redoSubDir = $process->{redoDir}."/" if $process->{redoFile};
 	my $lineProcessing = $File->{LineCode};
-	my $fieldProcessing = $File->{FieldCode};
-	my $fieldProcessingSpec = $File->{FieldCodeSpec};
 	my $addtlProcessingTrigger = $File->{addtlProcessingTrigger};
 	my $addtlProcessing = $File->{addtlProcessing};
 	my $firstLineProc = $File->{firstLineProc};
+
+	# read format configuration
+	my ($poslen, $isFixLen, $skip, $sep, $autoheader); 
+	my (@header, @targetheader);
+	if (ref($File->{format}) eq "HASH") {
+		$skip = $File->{format}{skip} if $File->{format}{skip};
+		$sep = $File->{format}{sep} if $File->{format}{sep};
+		$autoheader = $File->{format}{autoheader} if $File->{format}{autoheader};
+		my $origsep = $sep;
+		if ($sep =~ /^fix/) {
+			my ($evalString) = ($sep =~ /fix=(.*?)$/);
+			# positions/length definitions from fix "separator" definition: e.g. "fix=$poslen=[(0,3),(3,3)]"
+			eval $evalString;
+			if ($@) {
+				$logger->error("error in eval position/length: $evalString:".$@);
+				return 0;
+			}
+			$sep = ";";
+			$isFixLen = 1;
+		} else {
+			if (!$sep) {
+				$logger->error("no separator set in ".Dumper($File)) ;
+				return 0;
+			}
+		}
+		@header = split $sep, $File->{format}{header} if $File->{format}{header};
+		@targetheader = split $sep, $File->{format}{targetheader} if $File->{format}{targetheader};
+		$logger->debug("skip: $skip ,sep: [".$origsep."], header: @header \nsyncheader: @targetheader \nlineProcessing:".$File->{LineCode}."\nfieldProcessing:".$File->{FieldCode}."\nfieldProcessingSpec:".Dumper($File->{FieldCodeSpec})."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing}."\nfirstLineProc:".$firstLineProc);
+	} else {
+		$logger->error("no format definition found in ".Dumper($File));
+		return 0;
+	}
+
+	# read all files with same format
 	for my $filename (@filenames) {
-		# Format Konfiguration einlesen
-		my ($poslen, $isFixLen, $skip, $sep, $autoheader); 
-		my (@header, @syncheader);
-		if (ref($File->{format}) eq "HASH") {
-			$skip = $File->{format}{skip} if $File->{format}{skip};
-			$sep = $File->{format}{sep} if $File->{format}{sep};
-			$autoheader = $File->{format}{autoheader} if $File->{format}{autoheader};
-			my $origsep = $sep;
-			if ($sep =~ /^fix/) {
-				my ($evalString) = ($sep =~ /fix=(.*?)$/);
-				# position/längen definition aus der sep definition holen: zB "fix=$poslen=[(0,3),(3,3)]"
-				eval $evalString;
-				$logger->error("eval position/length evalString: ".$evalString.$@) if ($@);
-				$sep = ";";
-				$isFixLen = 1;
-			}
-			else {
-				if (!$autoheader) {
-					$sep = ";" if !$sep;
-				}
-			}
-			@header = split $sep, $File->{format}{header} if $File->{format}{header};
-			@syncheader = split $sep, $File->{format}{syncheader} if $File->{format}{syncheader};
-			$logger->debug("skip: $skip ,sep: [".$origsep."], header: @header \nsyncheader: @syncheader \nlineProcessing:".$File->{LineCode}."\nfieldProcessing:".$File->{FieldCode}."\nfieldProcessingSpec:".Dumper($File->{FieldCodeSpec})."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing}."\nfirstLineProc:".$firstLineProc);
-		} else {
-			$logger->error("keine format definitionen gefunden !!");
-			return 0;
-		}
-		# vorhandener sync header überschreibt immer header !
-		if ($File->{format}{syncheader}) {
-			$File->{headings} = \@syncheader;
-		} else {
-			$File->{headings} = \@header;
-		}
-		# Datenfile öffnen
 		open (FILE, "<".$File->{encoding}, $redoSubDir.$filename) or do { #
 			if (! -e $redoSubDir.$filename) {
 				$logger->error("no file $redoSubDir$filename to process...") unless ($File->{optional});
-				$logger->warn("no file $redoSubDir$filename found... "); # nur fürs protokoll (kein mail oder so)
+				$logger->warn("no file $redoSubDir$filename found... ");
 			} else {
 				$logger->error("file open error: $!")
 			}
@@ -70,16 +67,16 @@ sub readText {
 			auto_diag => 1,
 			sep_char  => $sep
 		});
-		# erzeuge lokalen kontext für line record separator änderung
+		# local context for special line record separator
 		{
 			my $newRecSep;
 			if ($File->{allowLinefeedInData}) {
-				# binmode und line record separator auf CRLF setzen, damit in Werten enthaltene linefeeds beim Einlesen nicht zu künstlichen neuen Zeilen führen.
-				binmode(FILE, ":raw".$File->{encoding}); # raw deshalb, weil CRLF hier sonst geschluckt werden...
+				# enable binmode and set line record separator to CRLF, so linefeeds in values don't create artificial new lines/records
+				binmode(FILE, ":raw".$File->{encoding}); # raw so not to swallow CRLF
 				$newRecSep = "\015\012";
 				$logger->debug("binmode");
 			}
-			# record separator (standard ist CRLF) ändern, wenn notwendig:
+			# change record separator (standard CRLF), if needed
 			local $/ = $newRecSep if $newRecSep;
 			my @layers = PerlIO::get_layers(FILE);
 			$logger->debug("layers: @layers");
@@ -92,9 +89,9 @@ sub readText {
 				$logger->debug("evaled: ".$firstLineProc);
 			}
 			if ($skip) {
-				$skip-- if $firstLineProc; # eine zeile weniger übergehen, wenn durch firstLineProc schon konsumiert..
+				$skip-- if $firstLineProc; # if consumed already by firstLineProc skip one row less
 				$logger->debug("skip another $skip lines..");
-				# übergehe erste $skip zeilen im datenfile (evtl. report header) wenn eine Ganzzahl oder falls $skip ein text ist, bis zum Auftreten des textes (inklusive):
+				# skip first $skip rows in file (e.g. report header) if $skip is an integer, if $skip is non-integer, skip until the text $skip appears (inclusive)
 				if ($skip =~ /^\d+$/) {
 					for (1 .. $skip) {$_ = <FILE>};
 				} else {
@@ -104,127 +101,39 @@ sub readText {
 					}
 				}
 			}
-			# autoheader: simple csv daten ohne kopfzeilenkenntnis (annahme: erste Zeile ist header)...
-			if ($autoheader) {
-				$sep = "," if !$sep;
-				$_ = <FILE>; chomp;
-				$_ = encode('cp1252', $_) if $File->{encoding};
-				@header = split $sep;
-				$File->{headings} = \@header;
-				$logger->debug("autoheader set, sep: [".$sep."], headings: @header");
-			}
 
-			# durch alle zeilen des Datenfiles iterieren ...
+			# iterate through all rows of file
 			my $lineno = 0;
 			my (@line,@previousline);
 LINE:
 			while (<FILE>) {
 				$_ = encode('cp1252', $_) if $File->{encoding};
 				chomp;
-				# falls $linecode auf die ganze Zeile zugreifen muss, dann mit $rawline ...
-				our $rawline = $_;
-				# leere Zeilen übergehen
+				# in case lineProcessing or addtlProcessing needs access to whole row -> $rawline
+				my $rawline = $_;
+				# skip empty rows
 				next LINE if $_ eq "";
-				
-				# finale datenstruktur für die eingelesenen daten ist %line.
-				# wenn das feld durch einen anderen namen aus syncheader ersetzt wird, wird das feld mit dem original namen in %templine abgelegt (für weitere Verwendung in $lineProcessing)
-				# Der wert wird unter $line{$syncheader[$i]} abgelegt.
-				# das ganze wird auch für die vorhergehende zeile (%previousline) und deren tempzeile (%previoustempline) gemacht.
-				my (%line,%templine,%previousline,%previoustempline);
 				@previousline = @line;
 				if ($isFixLen) {
 					@line = undef;
 					for (my $i=0;$i<@header;$i++) {
 						$line[$i] = substr ($_, $poslen->[$i][0],$poslen->[$i][1]-$poslen->[$i][0]);
 					}
-				}
-				else {
+				} else {
 					if ($File->{format}{quotedcsv}) {
 						if ($sv->parse($_)) {
 							@line = $sv->fields();
 						} else {
-							$logger->error("Zeile konnte nicht geparsed werden: ".$sv->error_diag());
+							$logger->error("couldn't parse quoted csv row: ".$sv->error_diag());
 						}
 					} else {
 						@line = split $sep;
 					}
 				}
-				$logger->trace('raw line: '.Dumper(\@line)) if $logger->is_trace;
+				$logger->trace("raw line: $rawline, line: ".Dumper(\@line)) if $logger->is_trace;
 				$lineno++;
 				next LINE if $line[0] eq "" and !$lineProcessing;
-				our $skipLineAssignment = 0; # kann im FieldCode oder FieldCodeSpec gesetzt werden, um weiter unten die normale Zuweisung der ganzen Zeile zu verhindern...
-				# durch alle Felder der aktuellen Zeile iterieren ...
-				for (my $i=0;$i<@line;$i++) {
-					# $fieldProcessing bzw.  $fieldProcessingSpec ersetzen normale Zuweisungen vollständig !
-					our $skipAssignment = 0; # kann im FieldCode oder FieldCodeSpec gesetzt werden, um weiter unten die normale Zuweisung zu verhindern (essenziell, wenn dies durch den FieldCode gemacht wird !)
-					if ($fieldProcessing || $fieldProcessingSpec->{$syncheader[$i]} || $fieldProcessingSpec->{$header[$i]}) {
-						# im Config wurde Feldverarbeitung $File{<typ>}{FieldCode} befüllt, ersetzt Feldbearbeitung generell...
-						if ($fieldProcessing) {
-							$logger->trace('BEFORE: $header['.$i.']:'.$header[$i].',$line['.$i.']:'.$line[$i].",fieldProcessing:".$fieldProcessing) if $logger->is_trace;
-							eval $fieldProcessing;
-							$logger->error("eval fieldProcessing: ".$fieldProcessing.$@) if ($@);
-							$logger->trace('AFTER: $header['.$i.']:'.$header[$i].',$line['.$i.']:'.$line[$i]."<<line: $lineno") if $logger->is_trace;
-						}
-						# im Config wurde Feldverarbeitung $File{<typ>}{FieldCodeSpec}{<feld>} befüllt, ersetzt Feldbearbeitung nur für spezifisches Feld entweder aus syncheader oder header...
-						elsif ($fieldProcessingSpec->{$syncheader[$i]}) {
-							$logger->trace('BEFORE: $syncheader['.$i.']:'.$syncheader[$i].',$line['.$i.']:'.$line[$i].",fieldProcessingSpec{syncheader[i]}:".$fieldProcessingSpec->{$syncheader[$i]}) if $logger->is_trace;
-							eval $fieldProcessingSpec->{$syncheader[$i]};
-							$logger->error("eval fieldProcessingSpec->{syncheader[i]}: ".$fieldProcessingSpec->{$syncheader[$i]}.$@) if ($@);
-							$logger->trace('AFTER: $syncheader['.$i.']:'.$syncheader[$i].',$line['.$i.']:'.$line[$i]."<<line: $lineno") if $logger->is_trace;
-						}
-						elsif ($fieldProcessingSpec->{$header[$i]}) {
-							$logger->trace('BEFORE: $header['.$i.']:'.$header[$i].',$line['.$i.']:'.$line[$i].",fieldProcessingSpec{header[i]}:".$fieldProcessingSpec->{$header[$i]}) if $logger->is_trace;
-							eval $fieldProcessingSpec->{$header[$i]};
-							$logger->error("eval fieldProcessingSpec->{header[i]}: ".$fieldProcessingSpec->{$header[$i]}.$@) if ($@);
-							$logger->trace('AFTER: $header['.$i.']:'.$header[$i].',$line['.$i.']:'.$line[$i]."<<line: $lineno") if $logger->is_trace;
-						}
-					} else { # normale zuweisungen zum entsprechenden feld (bezeichnet mit header)
-						# zuerst führende und nachstehende leerzeichen entfernen
-						$line[$i] =~ s/^ *//;
-						$line[$i] =~ s/ *$//;
-						# Zahlen (und NUR Zahlen) in DBI format konvertieren ( \d+\.?\d* ) auf Basis des konfigurierten locales
-						$line[$i] =~ s/\,//g if ($File->{locale} eq "english" and $line[$i] =~ /^-?\d{1,3}(\,\d{3})+(\.\d*)?$/);
-						$line[$i] =~ s/\.//g if ($File->{locale} eq "german" and $line[$i] =~ /^-?\d{1,3}(\.\d{3})+(\,\d*)?$/);
-						$line[$i] =~ s/\,/\./ if ($line[$i] =~ /^-?\d+\,\d+$/);
-					}
-					$logger->trace('verarbeitete das feld mit header:'.$header[$i].', $skipAssignment: '.$skipAssignment.', $skipLineAssignment: '.$skipLineAssignment) if $logger->is_trace;
-
-					if (!($skipAssignment or $skipLineAssignment)) {
-						# nur syncheader verarbeitung, wenn syncheader definiert, ungleich den ursprünglichen headern und felddefinition in syncheader enthalten
-						if ($File->{format}{syncheader} && ($header[$i] ne $syncheader[$i])) {
-							# if $header[$i] bzw if $syncheader[$i] verhindert autovivifikation von leeren hasheinträgen, wenn $i für @header oder if @syncheader überschritten ist
-							$line{$syncheader[$i]} = $line[$i] if $syncheader[$i];
-							$previousline{$syncheader[$i]} = $previousline[$i] if $syncheader[$i];
-							$templine{$header[$i]} = $line[$i] if $header[$i];
-							$previoustempline{$header[$i]} = $previousline[$i] if $header[$i];
-						} else {
-							$line{$header[$i]} = $line[$i] if $header[$i];
-							$previousline{$header[$i]} = $previousline[$i] if $header[$i];
-						}
-					}
-					# wird zusätzliche (Feld)Verarbeitung getriggert (angegeben in format => {addtlProcTrigger => "feldname", addtlProc="$addtlProcessing"})
-					# im Config wurde (Feld)Zusatzverarbeitung $File{<typ>}{addtlProcessing} befüllt...
-					if (($addtlProcessingTrigger eq "*" or $header[$i] eq $addtlProcessingTrigger) && $header[$i]) { # && $header[$i], da es mitunter vorkommt, dass $header[$i] leer/undefiniert ist.
-						$logger->trace('BEFORE: $header['.$i.']:'.$header[$i].',$line['.$i.']:'.$line[$i].",addtlProcessing:".$addtlProcessing) if $logger->is_trace;
-						eval $addtlProcessing;
-						$logger->error("eval addtlProcessing: $addtlProcessing".$@) if ($@);
-						$logger->trace('AFTER: $header['.$i.']:'.$header[$i].',$line['.$i.']:'.$line[$i]."<<line: $lineno") if $logger->is_trace;
-					}
-				}
-
-				# im Config wurde (zusätzliche) Zeilenverarbeitung $File{<typ>}{LineCode} befüllt...
-				if ($lineProcessing) {
-					eval $lineProcessing;
-					$logger->error("eval lineProcessing: $lineProcessing".$@) if ($@);
-					if ($logger->is_trace) {
-						$logger->trace("lineProcessing:".$lineProcessing.", line: $lineno");
-						$logger->trace("templine:\n".Dumper(\%templine));
-						$logger->trace("previousline:\n".Dumper(\%previousline));
-						$logger->trace("previoustempline:\n".Dumper(\%previoustempline));
-					}
-				}
-				$logger->trace('line:\n'.Dumper(\%line)) if $logger->is_trace;
-				push @{$process->{data}}, \%line if %line;
+				readRow($process,\@line,\@previousline,\@header,\@targetheader,$rawline,$lineProcessing,$addtlProcessingTrigger,$addtlProcessing,$File->{locale},$lineno);
 			}
 		}
 		close FILE;
@@ -325,57 +234,60 @@ sub readExcel {
 	my @filenames = @{$filenames} if $filenames;
 	my $redoSubDir = $process->{redoDir}."/" if $process->{redoFile};
 	my $lineProcessing = $File->{LineCode};
-	my $fieldProcessing = $File->{FieldCode};
-	my $fieldProcessingSpec = $File->{FieldCodeSpec};
 	my $addtlProcessingTrigger = $File->{addtlProcessingTrigger};
 	my $addtlProcessing = $File->{addtlProcessing};
+	
+	# reset module global header configs
+	%dateColumn = undef;
+	%headerColumn = undef;
+	%xlheader=  undef;
 
+	# read format configuration
+	my (@header, @targetheader);
+	if (ref($File->{format}) eq "HASH") {
+		my $sep = "\t";
+		$startRow += $File->{format}{skip} if $File->{format}{skip};
+		$logger->error("no header defined") if !$File->{format}{header};
+		$logger->error("no targetheader defined") if !$File->{format}{targetheader};
+		@header = split $sep, $File->{format}{header};
+		@targetheader = split $sep, $File->{format}{targetheader};
+		$logger->debug("skip: ". $File->{format}{skip}.", header: @header \targetheader: @targetheader \nlineProcessing:".$File->{LineCode}."\nfieldProcessing:".$File->{FieldCode}."\nfieldProcessingSpec:".Dumper($File->{FieldCodeSpec})."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing});
+	} else {
+		$logger->error("no format definition found in ".Dumper($File));
+		return 0;
+	}
+	# prepare date field lookup
+	if ($File->{format}{dateColumns}) {
+		for my $col (@{$File->{format}{dateColumns}}) {
+			$dateColumn{$col} = 1;
+		}
+	}
+	# prepare column lookups 
+	# headerColumn: needed target column -> target field name
+	# xlheader: original column name -> expected content in header cell
+	my $i=0;
+	for my $col (@{$File->{format}{headerColumns}}) {
+		$headerColumn{$col} = $targetheader[$i];
+		$xlheader{$col} = $header[$i];
+		$i++;
+	}
+	@header = @targetheader;
+
+	# read all files with same format
 	for my $filename (@filenames) {
 		# reset module global variables
 		$startRow = 1; 
-		%dateColumn = undef;
-		%headerColumn = undef;
 		%dataRows = undef;
 		$maxRow = 1;
-		%xlheader=  undef;
-		
-		# read format configuration
-		my (@header, @syncheader);
-		if (ref($File->{format}) eq "HASH") {
-			my $sep = "\t";
-			$startRow += $File->{format}{skip} if $File->{format}{skip};
-			$logger->error("keine header definiert") if !$File->{format}{header};
-			$logger->error("keine syncheader definiert") if !$File->{format}{syncheader};
-			@header = split $sep, $File->{format}{header};
-			@syncheader = split $sep, $File->{format}{syncheader};
-			$logger->debug("skip: ". $File->{format}{skip}.", header: @header \nsyncheader: @syncheader \nlineProcessing:".$File->{LineCode}."\nfieldProcessing:".$File->{FieldCode}."\nfieldProcessingSpec:".Dumper($File->{FieldCodeSpec})."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing});
-		} else {
-			$logger->error("keine format definitionen gefunden !!");
-			return 0;
-		}
-		# sync header (finale field names for database) always defines header !
-		$File->{headings} = \@syncheader;
+
 		# check excel file existence
 		if (! -e $redoSubDir.$filename) {
-			$logger->error("kein excel file ($filename) zu verarbeiten...") unless ($File->{optional});
-			$logger->warn("kein file $redoSubDir$filename gefunden... "); # nur fürs protokoll (kein mail oder so)
+			$logger->error("no excel file ($filename) to process") unless ($File->{optional});
+			$logger->warn("no file $redoSubDir$filename found"); 
 			return 0;
 		}
-		# prepare date field lookup
-		if ($File->{format}{dateColumns}) {
-			for my $col (@{$File->{format}{dateColumns}}) {
-				$dateColumn{$col} = 1;
-			}
-		}
-		# prepare column lookups (headerColumn: needed excel column -> target field name resp. xlheader: column -> expected header content)
-		my $i=0;
-		for my $col (@{$File->{format}{headerColumns}}) {
-			$headerColumn{$col} = $syncheader[$i];
-			$xlheader{$col} = $header[$i];
-			$i++;
-		}
 
-		@header = @syncheader;
+		# read in excel file
 		my $parser;
 		if ($File->{format}{xlsx}) {
 			$logger->info("open xlsx file $redoSubDir$filename ... ");
@@ -414,72 +326,11 @@ LINE:
 		for my $lineno ($startRow+1 .. $maxRow) {
 			@previousline = @line;
 			@line = undef;
-			# Zeile @line aus den zwischengespeicherten werten so vorbereiten, wie sie sonst auch aussieht
+			# get @line from stored values
 			for (my $i = 0; $i < @{$File->{format}{headerColumns}}; $i++) {
 				$line[$i] = $dataRows{$lineno}{$header[$i]};
 			}
-			# finale datenstruktur für die eingelesenen daten ist %line.
-			# wenn das feld durch einen anderen namen aus syncheader ersetzt wird, wird das feld mit dem original namen in %templine abgelegt (für weitere Verwendung in $lineProcessing)
-			# Der wert wird unter $line{$syncheader} abgelegt.
-			# das ganze wird auch für die vorhergehende zeile (%previousline) und deren tempzeile (%previoustempline) gemacht.
-			my (%line,%templine,%previousline,%previoustempline);
-			# durch alle Felder der aktuellen Zeile iterieren ...
-			our $skipLineAssignment = 0; # kann im FieldCode oder FieldCodeSpec gesetzt werden, um weiter unten die normale Zuweisung der ganzen Zeile zu verhindern...
-			for (my $i = 0; $i < @{$File->{format}{headerColumns}}; $i++) {
-				# $fieldProcessing bzw.  $fieldProcessingSpec ersetzen normale Zuweisungen vollständig !
-				our $skipAssignment = 0; # kann im FieldCode oder FieldCodeSpec gesetzt werden, um weiter unten die normale Zuweisung zu verhindern (essenziell, wenn dies durch den FieldCode gemacht wird !)
-				if ($fieldProcessing || $fieldProcessingSpec->{$syncheader[$i]} || $fieldProcessingSpec->{$header[$i]}) {
-					# im Config wurde Feldverarbeitung $File{<typ>}{FieldCode} befüllt, ersetzt Feldbearbeitung generell...
-					if ($fieldProcessing) {
-						$logger->trace('BEFORE: $header['.$i.']:'.$header[$i].',$line['.$i.']:'.$line[$i].",fieldProcessing:".$fieldProcessing) if $logger->is_trace;
-						eval $fieldProcessing;
-						$logger->error("eval fieldProcessing: ".$fieldProcessing.$@) if ($@);
-						$logger->trace('AFTER: $header['.$i.']:'.$header[$i].',$line['.$i.']:'.$line[$i]."<<line: $lineno") if $logger->is_trace;
-					}
-					# im Config wurde Feldverarbeitung $File{<typ>}{FieldCodeSpec}{<feld>} befüllt, ersetzt Feldbearbeitung nur für spezifisches Feld aus syncheader/header...
-					elsif ($fieldProcessingSpec->{$header[$i]}) {
-						$logger->trace('BEFORE: $header['.$i.']:'.$header[$i].',$line['.$i.']:'.$line[$i].",fieldProcessingSpec{header[i]}:".$fieldProcessingSpec->{$header[$i]}) if $logger->is_trace;
-						eval $fieldProcessingSpec->{$header[$i]};
-						$logger->error("eval fieldProcessingSpec->{header[i]}: ".$fieldProcessingSpec->{$header[$i]}.$@) if ($@);
-						$logger->trace('AFTER: $header['.$i.']:'.$header[$i].',$line['.$i.']:'.$line[$i]."<<line: $lineno") if $logger->is_trace;
-					}
-				} else { # normale zuweisungen zum entsprechenden feld (bezeichnet mit header)
-					# zuerst führende und nachstehende leerzeichen entfernen
-					$line[$i] =~ s/^ *//;
-					$line[$i] =~ s/ *$//;
-					# Zahlen (und NUR Zahlen) in DBI format konvertieren ( \d+\.?\d* ) auf Basis des konfigurierten locales
-					$line[$i] =~ s/\,//g if ($File->{locale} eq "english" and $line[$i] =~ /^-?\d{1,3}(\,\d{3})+(\.\d*)?$/);
-					$line[$i] =~ s/\.//g if ($File->{locale} eq "german" and $line[$i] =~ /^-?\d{1,3}(\.\d{3})+(\,\d*)?$/);
-					$line[$i] =~ s/\,/\./ if ($line[$i] =~ /^-?\d+\,\d+$/);
-				}
-				$logger->trace('verarbeitete das feld mit header:'.$header[$i].', $skipAssignment: '.$skipAssignment.', $skipLineAssignment: '.$skipLineAssignment) if $logger->is_trace;
-
-				if (!($skipAssignment or $skipLineAssignment)) {
-					$line{$header[$i]} = $line[$i];
-					$previousline{$header[$i]} = $previousline[$i];
-				}
-				# wird zusätzliche (Feld)Verarbeitung getriggert (angegeben in format => {addtlProcTrigger => "feldname", addtlProc="$addtlProcessing"})
-				# im Config wurde (Feld)Zusatzverarbeitung $File{<typ>}{addtlProcessing} befüllt...
-				if (($addtlProcessingTrigger eq "*" or $header[$i] eq $addtlProcessingTrigger) && $header[$i]) { # && $header[$i], da es mitunter vorkommt, dass $header[$i] leer/undefiniert ist.
-					$logger->trace('BEFORE: $header['.$i.']:'.$header[$i].',$line['.$i.']:'.$line[$i].",addtlProcessing:".$addtlProcessing) if $logger->is_trace;
-					eval $addtlProcessing;
-					$logger->error("eval addtlProcessing: $addtlProcessing".$@) if ($@);
-					$logger->trace('AFTER: $header['.$i.']:'.$header[$i].',$line['.$i.']:'.$line[$i]."<<line: $lineno") if $logger->is_trace;
-				}
-			}
-			# im Config wurde (zusätzliche) Zeilenverarbeitung $File{<typ>}{LineCode} befüllt...
-			if ($lineProcessing) {
-				eval $lineProcessing;
-				$logger->error("eval lineProcessing: $lineProcessing".$@) if ($@);
-				if ($logger->is_trace) {
-					$logger->trace("lineProcessing:".$lineProcessing.", line: $lineno");
-					$logger->trace("templine:\n".Dumper(\%templine));
-					$logger->trace("previousline:\n".Dumper(\%previousline));
-					$logger->trace("previoustempline:\n".Dumper(\%previoustempline));
-				}
-			}
-			$logger->trace("line:\n".Dumper(\%line)) if $logger->is_trace;
-			push @{$process->{data}}, \%line if %line;
+			readRow($process,\@line,\@previousline,\@header,\@targetheader,undef,$lineProcessing,$addtlProcessingTrigger,$addtlProcessing,$File->{locale},$lineno);
 		}
 		close FILE;
 		if (!$process->{data} and !$File->{emptyOK}) {
@@ -499,29 +350,24 @@ sub readXML {
 	my @filenames = @{$filenames} if $filenames;
 	my $redoSubDir = $process->{redoDir}."/" if $process->{redoFile};
 	my $lineProcessing = $File->{LineCode};
-	my $fieldProcessing = $File->{FieldCode};
-	my $fieldProcessingSpec = $File->{FieldCodeSpec};
 	my $addtlProcessingTrigger = $File->{addtlProcessingTrigger};
 	my $addtlProcessing = $File->{addtlProcessing};
 
-	for my $filename (@filenames) {
-		# reset module global variables
-		%headerColumn = undef;
-		%dataRows = undef;
-		# read format configuration
-		my (@header, @syncheader);
-		if (ref($File->{format}) eq "HASH") {
-			my $sep = "\t";
-			$logger->error("no header defined") if !$File->{format}{header};
-			@header = split $sep, $File->{format}{header};
-			$logger->debug("header: @header \nlineProcessing:".$File->{LineCode}."\nfieldProcessing:".$File->{FieldCode}."\nfieldProcessingSpec:".Dumper($File->{FieldCodeSpec})."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing});
-		} else {
-			$logger->error("no format definitions found");
-			return 0;
-		}
-		$File->{headings} = \@header;
+	# read format configuration
+	my (@header, @targetheader);
+	if (ref($File->{format}) eq "HASH") {
+		my $sep = "\t";
+		$logger->error("no header defined") if !$File->{format}{header};
+		@header = split $sep, $File->{format}{header};
+		$logger->debug("header: @header \nlineProcessing:".$File->{LineCode}."\nfieldProcessing:".$File->{FieldCode}."\nfieldProcessingSpec:".Dumper($File->{FieldCodeSpec})."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing});
+	} else {
+		$logger->error("no format definitions found");
+		return 0;
+	}
+	@targetheader = @header;
 
-		# check file
+	# read all files with same format
+	for my $filename (@filenames) {
 		if (! -e $redoSubDir.$filename) {
 			$logger->error("no XML file ($filename) to process") unless ($File->{optional});
 			$logger->warn("file $redoSubDir$filename not found");
@@ -537,21 +383,27 @@ sub readXML {
 		$logger->error("no fieldXpath hash passed in format") unless ($File->{format}{fieldXpath} && ref($File->{format}{fieldXpath}) eq 'HASH');
 		my @records = $xpc->findnodes($File->{format}{xpathRecordLevel});
 		$logger->warn("no records found") if @records == 0;
+		# iterate through all rows of file
+		my $lineno = 0;
+		my (@line,@previousline);
 		foreach my $record (@records) {
-			my %line;
+			@previousline = @line;
+			@line = undef;
+			# get @line from stored values
 			if (ref($record) eq "XML::LibXML::Element") {
-				for my $field (keys (%{$File->{format}{fieldXpath}})) {
-					if ($File->{format}{fieldXpath}{$field} =~ /^\//) {
+				my @headerColumns = keys (%{$File->{format}{fieldXpath}});
+				for (my $i = 0; $i < @headerColumns; $i++) {
+					if ($File->{format}{fieldXpath}{$header[$i]} =~ /^\//) {
 						# absolute paths -> leave context node and find in the root doc. 
-						$line{$field} = $xpc->findvalue($File->{format}{fieldXpath}{$field});
+						$line[$i] = $xpc->findvalue($File->{format}{fieldXpath}{$header[$i]});
 					} else {
 						# relative paths -> context node is current record node 
-						$line{$field} = $xpc->findvalue($File->{format}{fieldXpath}{$field}, $record);
+						$line[$i] = $xpc->findvalue($File->{format}{fieldXpath}{$header[$i]}, $record);
 					}
 				}
 			}
-			$logger->trace("line:\n".Dumper(\%line)) if $logger->is_trace;
-			push @{$process->{data}}, \%line if %line;
+			$lineno++;
+			readRow($process,\@line,\@previousline,\@header,\@targetheader,undef,$lineProcessing,$addtlProcessingTrigger,$addtlProcessing,$File->{locale},$lineno);
 		}
 		if (!$process->{data} and !$File->{emptyOK}) {
 			$logger->error("empty file: $filename, no data returned");
@@ -559,6 +411,63 @@ sub readXML {
 		}
 	}
 	return 1;
+}
+
+# read row into final line hash (including special "hook" code)
+sub readRow {
+	my ($process,$line,$previousline,$header,$targetheader,$rawline,$lineProcessing,$addtlProcessingTrigger,$addtlProcessing,$locale,$lineno) = @_;
+	my @line = @$line;
+	my @previousline = @$previousline;
+	my @header = @$header;
+	my @targetheader = @$targetheader;
+	my $logger = get_logger();
+	
+	# if field is being replaced by a different name from targetheader, the data with the original name is placed in %templine (for further actions in $lineProcessing)
+	# the final value is put in $line{$targetheader}.
+	# there is also data from the previous line (%previousline) and the previous temp line (%previoustempline).
+	my (%line,%templine,%previousline,%previoustempline);
+	# iterate through fields of current row
+	for (my $i = 0; $i < @line; $i++) {
+		# first trim leading and trailing spaces
+		$line[$i] =~ s/^ *//;
+		$line[$i] =~ s/ *$//;
+		# remove thousand separators for numerals based on configured locale and change decimal separator to \d+\.?\d*
+		$line[$i] =~ s/\,//g if ($locale eq "english" and $line[$i] =~ /^-?\d{1,3}(\,\d{3})+(\.\d*)?$/);
+		$line[$i] =~ s/\.//g if ($locale eq "german" and $line[$i] =~ /^-?\d{1,3}(\.\d{3})+(\,\d*)?$/);
+		$line[$i] =~ s/\,/\./ if ($line[$i] =~ /^-?\d+\,\d+$/);
+
+		# only process as targetheader, if they are not the same as the original header (allows special access to original header via $templine/$previoustempline)
+		if ($header[$i] ne $targetheader[$i]) {
+			# prevent autovivification of hash entries, if $i is potentially > @header or > @targetheader
+			$line{$targetheader[$i]} = $line[$i] if $targetheader[$i];
+			$previousline{$targetheader[$i]} = $previousline[$i] if $targetheader[$i];
+			$templine{$header[$i]} = $line[$i] if $header[$i];
+			$previoustempline{$header[$i]} = $previousline[$i] if $header[$i];
+		} else {
+			$line{$header[$i]} = $line[$i] if $header[$i];
+			$previousline{$header[$i]} = $previousline[$i] if $header[$i];
+		}
+		# additional (field)processing triggered (in addtlProcessingTrigger => "fieldname", addtlProcessing => "..."})
+		if (($addtlProcessingTrigger eq "*" or $header[$i] eq $addtlProcessingTrigger) && $header[$i]) { # && $header[$i], as sometimes $header[$i] is empty/undefined
+			$logger->trace('BEFORE: $header['.$i.']:'.$header[$i].',$line['.$i.']:'.$line[$i].",addtlProcessing:".$addtlProcessing) if $logger->is_trace;
+			eval $addtlProcessing;
+			$logger->error("eval addtlProcessing: $addtlProcessing".$@) if ($@);
+			$logger->trace('AFTER: $header['.$i.']:'.$header[$i].',$line['.$i.']:'.$line[$i]."<<line: $lineno") if $logger->is_trace;
+		}
+	}
+	# additional row processing defined
+	if ($lineProcessing) {
+		eval $lineProcessing;
+		$logger->error("eval lineProcessing: $lineProcessing".$@) if ($@);
+		if ($logger->is_trace) {
+			$logger->trace("lineProcessing:".$lineProcessing.", line: $lineno");
+			$logger->trace("templine:\n".Dumper(\%templine));
+			$logger->trace("previousline:\n".Dumper(\%previousline));
+			$logger->trace("previoustempline:\n".Dumper(\%previoustempline));
+		}
+	}
+	$logger->trace('line:\n'.Dumper(\%line)) if $logger->is_trace;
+	push @{$process->{data}}, \%line if %line;
 }
 
 # write text file
@@ -588,11 +497,11 @@ sub writeText {
 	$logger->debug("fields: @columnnames");
 	$logger->debug("paddings: @paddings");
 	my $headerRow;
-	my $col = 0; # parallel durch @paddings iterieren.
+	my $col = 0; # iterate through @paddings in parallel.
 	my $firstcol = 1;
 	for my $colname (@columnnames) {
 		if (!$File->{columnskip}{$colname}) {
-			# erste Spalte hat kein Trennzeichen davor. Wenn spezielles Trennzeichen für Kopfzeile, dann dieses verwenden, sonst das allgemeine.
+			# first column has no separator before. if there is a special separator for heading, then use it, else the standard one
 			$headerRow = $headerRow.($firstcol ? "" : ($File->{sepHead} ? $File->{sepHead} : $File->{sep})).$colname if ($File->{format} eq "sep");
 			$headerRow = $headerRow.sprintf("%-*s%s", $paddings[$col],$colname) if ($File->{format} eq "fix");
 			$firstcol = 0;
@@ -615,7 +524,7 @@ sub writeText {
 		# data row
 		my $row = $data->[$i];
 		my $lineRow;
-		# alle spalten in eine Zeile zusammenhängen
+		# chain all data in a row
 		my $col = 0; $firstcol = 1;
 		for my $colname (@columnnames) {
 			if (!$File->{columnskip}{$colname}) {
@@ -625,9 +534,9 @@ sub writeText {
 				if ($File->{additionalColTrigger} && $File->{additionalColAction}) {
 					eval $File->{additionalColAction} if (eval $File->{additionalColTrigger});
 				}
-				# letzte spalte ($columnnames[@columnnames-1], (arrays in skalarem kontext ergibt die länge des array)) sollte kein Trennzeichen zum schluss haben.
+				# last column ($columnnames[@columnnames-1]) should have not separator afterwards
 				$lineRow = $lineRow.($firstcol ? "" : $File->{sep}).sprintf("%s", $value) if ($File->{format} eq "sep");
-				# zusätzliches padding für fixlängen format
+				# additional padding for fixed length format
 				$lineRow = $lineRow.sprintf("%-*s%s", $paddings[$col],$value) if ($File->{format} eq "fix");
 				$firstcol = 0;
 			}

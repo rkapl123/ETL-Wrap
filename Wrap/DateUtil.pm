@@ -213,6 +213,11 @@ sub first_weekYYYYMMDD {
 	return first_week ($d,$m,$y,$day,$month);
 }
 
+sub convertDate ($) {
+	my ($y,$m,$d) = ($_[0] =~ /(\d{4})[.\/](\d\d)[.\/](\d\d)/);
+	return sprintf("%04d%02d%02d",$y, $m, $d);
+}
+
 sub convertDateFromMMM {
 	my ($inDate, $day, $mon, $year) = @_;
 	my ($d,$m,$y) = ($inDate =~ /(\d{2})-(\w{3})-(\d{4})/);
@@ -374,7 +379,7 @@ sub convertEpochToYYYYMMDD {
 __END__
 =head1 NAME
 
-ETL::Wrap::DateUtil - Date and Time helping functions
+ETL::Wrap::DateUtil - Date and Time helper functions
 
 =head1 SYNOPSIS
 
@@ -413,7 +418,6 @@ ETL::Wrap::DateUtil - Date and Time helping functions
  subtractDays ($date, $days)
  subtractDaysHol ($date, $days, [$template], $hol)
  convertcomma ($number, $divideBy)
- getInteractiveDate($daysback, [$template])
  convertToThousendDecimal($value, $ignoreDecimal)
  get_dateseries
  parseFromDDMMYYYY ($dateStr)
@@ -432,191 +436,185 @@ ETL::Wrap::DateUtil - Date and Time helping functions
 
 =item get_curdate_dot: gets current date in format DD.MM.YYYY
 
-=item formatDate: formats passed (arguments $y,$m,$d) into format as defined in $template
+=item formatDate: formats passed date (given in arguments $y,$m,$d) into format as defined in $template
 
  $d .. day part
  $m .. month part
  $y .. year part
  $template .. optional, date template with D for day, M for month and Y for year (e.g. D.M.Y for 01.02.2016),
               D and M is always 2 digit, Y always 4 digit; if empty/nonexistent defaults to "YMD"
-              special formats are MMM und mmm als monthpart, here three letter month abbreviations in englisch (MMM) or german (mmm) are returned as month
+              special formats are MMM und mmm als monthpart, here three letter month abbreviations in english (MMM) or german (mmm) are returned as month
 
-=item formatDateFromYYYYMMDD: Ergebnis: übergebenes datum (argument $datum) im format wie definiert in $template
+=item formatDateFromYYYYMMDD: formats passed date (given in argument $date) in format as defined in $template
 
- $datum .. datum im fromat YYYYMMDD
- $template .. optional, Datumsformatvorlage mit D für Tag, M für Monat und Y für Jahr (z.b. D.M.Y für 01.02.2016),
-              D und M werden immer 2 stellig, Y wird immer vierstellig ersetzt; wenn leer/nicht vorhanden wird "YMD" angenommen. 
-              Spezielle Formate sind MMM und mmm als monatsteil, hier werden dreistellige Monatskürzel englisch (MMM) bzw. deutsch (mmm) als monat zurückgegeben.
+ $date .. date in format YYYYMMDD
+ $template .. same as in formatDate
 
-=item get_curdate_gen: Ergebnis: aktuelles datum im format wie definiert in $template
+=item get_curdate_gen: returns current date in format as defined in $template
 
- $template .. optional, Datumsformatvorlage mit D für Tag, M für Monat und Y für Jahr (z.b. D.M.Y für 01.02.2016),
-              D und M werden immer 2 stellig, Y wird immer vierstellig ersetzt; wenn leer/nicht vorhanden wird "YMD" angenommen.
+ $template .. same as in formatDate
 
-=item get_curdate_dash: Ergebnis: aktuelles datum im format DD-MM-YYYY
+=item get_curdate_dash: returns current date in format DD-MM-YYYY
 
-=item get_curdate_dash_plus_X_years: Ergebnis: aktuelles datum + X jahre im format DD-MM-YYYY
+=item get_curdate_dash_plus_X_years: date + X years in format DD-MM-YYYY
 
- $y .. Jahre, die zum aktuellen oder angegebenen Datum dazugezählt werden sollen.
- $year,$mon,$day .. optionales Datum, von dem aus die X Jahre dazugezählt werden sollen (wenn nicht vorhanden, dann wird aktuelles genommen).
- $daysToSubtract .. Tage die noch vom Ergebnis abgezogen werden sollen (für pfadgenerator)
+ $y .. years to be added to the current or given date
+ $year,$mon,$day .. optional date to which X years should be added (if not given current date is taken instead).
+ $daysToSubtract .. days that should be subtracted from the result
 
-=item get_curtime: Ergebnis: aktuelle Zeit im format HH:MM:SS (oder wie in formatstring $format angegeben, es wird allerdings immer in der Reihenfolge HH MM SS formatiert)
+=item get_curtime: returns current time in format HH:MM:SS (or as given in formatstring $format, however ordering of format is always hour, minute and second)
 
- $format .. optionaler sprintf formatstring (zb %02d:%02d:%02d) für stunde, minute und sekunde
+ $format .. optional sprintf format string (e.g. %02d:%02d:%02d) für hour, minute and second
 
-=item get_curtime_HHMM: Ergebnis: aktuelle Zeit im format HHMM
+=item get_curtime_HHMM: returns current time in format HHMM
 
-=item is_first_day_of_month: Ergebnis 1 wenn erster Tag des monats, 0 sonst
+=item is_first_day_of_month: returns 1 if first day of months, 0 else
 
- $date .. datum im format YYYYMMDD
+ $date .. date in format YYYYMMDD
 
 
-=item is_last_day_of_month: Ergebnis 1 wenn letzter Tag des monats, 0 sonst
+=item is_last_day_of_month: returns 1 if last day of month, 0 else
 
- $date .. datum im format YYYYMMDD
- $hol .. optional, Kalender zur Berücksichtigung von Feiertagen beim Bestimmen des Monatsletzten
+ $date .. date in format YYYYMMDD
+ $hol .. optional, calendar for holidays used to get the last of month
 
-=item get_last_day_of_month: Gibt den letzten Tag des Monats des übergebenen Datums zurück
+=item get_last_day_of_month: returns last day of month of passed date
 
- $date .. datum im format YYYYMMDD
+ $date .. date in format YYYYMMDD
 
-=item weekday: Ergebnis: 1..sonntag bis 7..samstag
+=item weekday: returns 1..sunday to 7..saturday
 
- $date .. datum im format YYYYMMDD
+ $date .. date in format YYYYMMDD
 
-=item is_weekend: Ergebnis 1 wenn samstag oder sonntag
+=item is_weekend: returns 1 if saturday or sunday
 
- $date .. datum im format YYYYMMDD
+ $date .. date in format YYYYMMDD
 
-=item is_holiday: Ergebnis 1 wenn Wochenende oder Feiertag
+=item is_holiday: returns 1 if weekend or holiday
 
- $hol .. Feiertagskalender; aktuell unterstützt: BS (Bundesschatz freie Tage), BF (OeBFA freie Tage) AT, TG (Target), UK (siehe is_holiday) und WE (für "Nur-Wochenende").
-         Wirft Fehler wenn Kalender nicht unterstützt (Hashlookup).
- $date .. datum im format YYYYMMDD
+ $hol .. holiday calendar; currently supported: AT (Austria), TG (Target), UK (see is_holiday) and WE (for only weekends).
+         throws error if calendar not supported (Hashlookup).
+ $date .. date in format YYYYMMDD
 
-=item last_week: Ergebnis 1 wenn gegebenes Datum ($d,$m,$y) letzter gegebener wochentag ($day: Bereich 0 - 6, Sonntag==0) im gegebenen monat ($month)
- wenn $month nicht gegeben, wird dieses vom gegebenem Datum genommen.
+=item last_week: returns 1 if given date ($d,$m,$y) is the last given weekday ($day: 0 - 6, sunday==0) in given month ($month)
+ if $month is not passed, then it is taken from passed date.
  
- $d .. tagesteil
- $m .. monatsteil
- $y .. jahresteil
- $day .. gegebener wochentag
- $month .. optional, gegebenes monat
+ $d .. day part
+ $m .. month part
+ $y .. year part
+ $day .. given weekday
+ $month .. optional, given month
 
-=item last_weekYYYYMMDD: Ergebnis 1 wenn gegebenes Datum ($date im Format YYYYMMDD) letzter gegebener wochentag ($day: Bereich 0 - 6, Sonntag==0) im gegebenen monat ($month)
- wenn $month nicht gegeben, wird dieses vom gegebenem Datum genommen.
+=item last_weekYYYYMMDD: returns 1 if given date ($date in Format YYYYMMDD) is the last given weekday ($day: 0 - 6, sunday==0) in given month ($month)
+ if $month is not passed, then it is taken from passed date.
  
- $date .. gegebenes Datum
- $day .. gegebener wochentag
- $month .. optional, gegebenes monat
-
-=item first_week: Ergebnis 1 wenn gegebenes Datum ($d,$m,$y) erster gegebener wochentag ($day: Bereich 0 - 6, Sonntag==0) im gegebenen monat ($month)
- wenn $month nicht gegeben, wird dieses vom gegebenem Datum genommen.
-
- $d .. tagesteil
- $m .. monatsteil
- $y .. jahresteil
- $day .. gegebener wochentag
- $month .. optional, gegebenes monat
-
-=item first_weekYYYYMMDD: Ergebnis 1 wenn gegebenes Datum ($date im Format YYYYMMDD) erster gegebener wochentag ($day: Bereich 0 - 6, Sonntag==0) im gegebenen monat ($month)
- wenn $month nicht gegeben, wird dieses vom gegebenem Datum genommen.
-
- $date .. gegebenes Datum
- $day .. gegebener wochentag
- $month .. optional, gegebenes monat
-=item convertDate: konvertiert gegebenes datum auf format YYYYMMDD
-
- $date .. datum im format YYYY.MM.DD oder YYYY/MM/DD
-sub convertDate ($) {
-	my ($y,$m,$d) = ($_[0] =~ /(\d{4})[.\/](\d\d)[.\/](\d\d)/);
-	return sprintf("%04d%02d%02d",$y, $m, $d);
-}
-=item convertDateFromMMM: konvertiert datum aus format dd-mmm-yyyy (01-Oct-05, englisch !), gibt datum im format DD.MM.YYYY ($day, $mon, $year werden dabei auch befüllt)
-
- $inDate .. datum, das konvertiert werden soll
- $day .. referenz für tagesteil
- $mon .. referenz für monatsteil 
- $year ..  referenz für jahresteil
-
-=item convertDateToMMM : konvertiert datum in ($day, $mon, $year) auf format dd-mmm-yyyy (01-Oct-05, englisch !)
-
- $day .. tagesteil
- $mon .. monatsteil
- $year .. jahresteil
-=item convertToDDMMYYYY: konvertiert datum in $datestring auf format dd.mm.yyyy
-
- $date .. datum im format YYYYMMDD
-
-=item addDays : addiert $dayDiff zum datum ($day, $mon, $year) und gibt Ergebnis im Format dd-mmm-yyyy (01-Oct-05, englisch !) zurück
-                Nebeneffekt: die argumente $day, $mon, $year werden ebenfalls verändert wenn sie nicht als literal sondern als variable angegeben wurden.
-
- $day .. tagesteil
- $mon .. monatsteil
- $year .. jahresteil
- $dayDiff .. tage, die addiert werden sollen
-
-=item subtractDays: zieht $days Kalendertage von $date ab.
-
- $date .. datum im format YYYYMMDD
- $days .. Anzahl Kalendertage zum abziehen
-
-=item subtractDaysHol: zieht $days Kalendertage von $date ab und berücksichtigt Wochenenden und Feiertage des mitgegebenen Kalenders.
-
- $date .. datum im format YYYYMMDD
- $days .. Anzahl Kalendertage zum abziehen
- $template .. optional, Datumsformatvorlage mit D für Tag, M für Monat und Y für Jahr (z.b. D.M.Y für 01.02.2016), 
-              D und M werden immer 2 stellig, Y wird immer vierstellig ersetzt; wenn leer/nicht vorhanden wird "YMD" angenommen.
- $hol .. Feiertagskalender; aktuell unterstützt: NO (keine Berücksichtigung), WE (nur Wochenende), BS (Bundesschatz freie Tage), BF (OeBFA freie Tage) AT, TG (Target), UK (siehe is_holiday). Default wenn nicht gegeben = AT.
-
-=item addDaysHol: addiert $days Kalendertage zu $date und berücksichtigt Wochenenden und Feiertage des mitgegebenen Kalenders.
-
- $date .. datum im format YYYYMMDD
- $days .. Anzahl Kalendertage zum hinzufügen
- $template .. optional, Datumsformatvorlage mit D für Tag, M für Monat und Y für Jahr (z.b. D.M.Y für 01.02.2016)
-              D und M werden immer 2 stellig, Y wird immer vierstellig ersetzt; wenn leer/nicht vorhanden wird "YMD" angenommen.
- $hol .. Feiertagskalender; aktuell unterstützt: NO (keine Berücksichtigung), WE (nur Wochenende), BS (Bundesschatz freie Tage), BF (OeBFA freie Tage) AT, TG (Target), UK (siehe is_holiday). Default wenn nicht gegeben = AT.
-
-=item addMonths: addiert $months Monate zu $date. Achtung bei Monatsenden (alles >28), wenn das Monatsende im Zielmonat nicht vorhanden ist, wird ins Folgemonat verschoben.
-
- $date .. datum im format YYYYMMDD
- $months .. Anzahl Monate zum hinzufügen
- $template .. optional, Datumsformatvorlage mit D für Tag, M für Monat und Y für Jahr (z.b. D.M.Y für 01.02.2016)
-              D und M werden immer 2 stellig, Y wird immer vierstellig ersetzt; wenn leer/nicht vorhanden wird "YMD" angenommen.
-=item get_lastdateYYYYMMDD: Ergebnis: letzter Geschäftstag (nur Wochenenden!) im format YYYYMMDD
-=item get_lastdateDDMMYYYY: Ergebnis: letzter Geschäftstag (nur Wochenenden!) im format DDMMYYYY
-=item convertcomma: konvertiert dezimalpunkt in $number auf komma, dividiert durch $divideBy vorher wenn $divideBy gesetzt
-
- $number ..  Zahl, die konvertiert werden soll
- $divideBy .. Zahl, durch die dividiert werden soll
-=item getInteractiveDate: holt eine Datumseingabe vom Benutzer, Defaultdatum $daysback Geschäftstage in der Vergangenheit (ohne Feiertage), Rückgabewert im Format $template
+ $date .. given date
+ $day .. given weekday
+ $month .. optional, given month
  
- $daysback .. Tage, die für die Einholung des default Datums (Vorgabe, kann mit Enter durchquittiert werden) rückwärts gegangen werden soll (0 = heute, 1 gestern, ...).
- $template .. optional, Datumsformatvorlage mit D für Tag, M für Monat und Y für Jahr (z.b. D.M.Y für 01.02.2016)
-              D und M werden immer 2 stellig, Y wird immer vierstellig ersetzt; wenn leer/nicht vorhanden wird "YMD" angenommen.
-=item convertToThousendDecimal: konvertiert $value in Tausendertrennzeichen getrennte Dezimalzahl (deutsches format)
+=item first_week: returns 1 if given date ($d,$m,$y) is the first given weekday ($day: 0 - 6, sunday==0) in given month ($month)
+ if $month is not passed, then it is taken from passed date.
+
+ $d .. day part
+ $m .. month part
+ $y .. year part
+ $day .. given weekday
+ $month .. optional, given month
+
+=item first_weekYYYYMMDD: returns 1 if given date ($date in Format YYYYMMDD) is the first given weekday ($day: 0 - 6, sunday==0) in given month ($month)
+ if $month is not passed, then it is taken from passed date.
+
+ $date .. given date
+ $day .. given weekday
+ $month .. optional, given month
  
- $value .. Zahl, die konvertiert werden soll
- $ignoreDecimal .. ohne Dezimalstellen
+=item convertDate: converts given date to format YYYYMMDD
 
-=item get_dateseries: gibt Datumswerte (Format YYYYMMMDD) beginnend mit $fromDate bis $toDate zurück,
-  wenn ein in $hol optional angegebener Feiertagskalender gesetzt ist, werden diese (inkl. Wochenende) berücksichtigt.
+ $date .. date in format YYYY.MM.DD or YYYY/MM/DD
+
+=item convertDateFromMMM: converts date from format dd-mmm-yyyy (01-Oct-05, english !), returns date in format DD.MM.YYYY ($day, $mon, $year are returned by ref as well)
+
+ $inDate .. date to be converted
+ $day .. ref for day part
+ $mon .. ref for month part
+ $year ..  ref for year part
+
+=item convertDateToMMM : converts date into ($day, $mon, $year) from format dd-mmm-yyyy (01-Oct-05, english !)
+
+ $day .. day part
+ $mon .. month part
+ $year .. year part
+
+=item convertToDDMMYYYY: converts date into $datestring (dd.mm.yyyy) from format YYYYMMDD
+
+ $date .. date in format YYYYMMDD
+
+=item addDays : adds $dayDiff to date ($day, $mon, $year) and returns in format dd-mmm-yyyy (01-Oct-05, english !)
+                arguments $day, $mon, $year are returned by ref as well if not passed as literal
+
+ $day .. day part
+ $mon .. month part
+ $year .. year part
+ $dayDiff .. days to be added
+
+=item subtractDays: subtracts $days actual calendar days from $date
+
+ $date .. date in format YYYYMMDD
+ $days .. calendar days to subtract
+
+=item subtractDaysHol: subtracts $days days from $date and regards weekends and holidays of passed calendar
+
+ $date .. date in format YYYYMMDD
+ $days .. calendar days to subtract
+ $template .. as in formatDate
+ $hol .. holiday calendar; currently supported: NO (no holidays), rest as in is_holiday
+ $hol .. holiday calendar; currently supported: NO (no holidays), rest as in is_holiday
+
+=item addDaysHol: adds $days days to $date and regards weekends and holidays of passed calendar
+
+ $date .. date in format YYYYMMDD
+ $days .. calendar days to add
+ $template .. as in formatDate
+ $hol .. holiday calendar; currently supported: NO (no holidays), rest as in is_holiday
  
- $fromDate .. Beginndatum
- $toDate .. Enddatum
- $hol .. Feiertagskalender
+=item addMonths: adds $months months to $date. when adding to months ends (>28 in february, >29 or >30 else), if the month end is not available in the target month, then date is moved into following month
 
-=item parseFromDDMMYYYY: erzeugt time epoch aus Datumsstring (dd.mm.yyyy)
+ $date .. date in format YYYYMMDD
+ $months .. months to add
+ $template .. as in formatDate
 
- $dateStr .. Datumsstring
-=item parseFromYYYYMMDD: erzeugt time epoch aus Datumsstring (yyyymmdd)
+=item get_lastdateYYYYMMDD: returns last business day (only weekends, no holiday here !) in format YYYYMMDD
 
- $dateStr .. Datumsstring
+=item get_lastdateDDMMYYYY: returns last business day (only weekends, no holiday here !) in format DDMMYYYY
 
-=item convertEpochToYYYYMMDD: erzeugt Datumsstring (yyyymmdd) aus epoche/Time::piece
+=item convertcomma: converts decimal point in $number to comma, also dividing by $divideBy before if $divideBy is set
 
- $arg .. Datum entweder als epoche (sekunden seit 1.1.1970) oder als Time::piece objekt
+ $number ..  number to be converted
+ $divideBy .. number to be divided by
+
+=item convertToThousendDecimal: converts $value into thousand separated decimal (german format)
+ 
+ $value .. number to be converted
+ $ignoreDecimal .. return number without post decimal places (truncate)
+
+=item get_dateseries: returns date values (format YYYYMMMDD) starting at $fromDate until $toDate,
+  if a holiday calendar is set in $hol (optional), these holidays (incl. weekends) are regarded as well.
+ 
+ $fromDate .. start date
+ $toDate .. end date
+ $hol .. holiday calendar
+
+=item parseFromDDMMYYYY: returns time epoch from datestring (dd.mm.yyyy)
+
+ $dateStr .. datestring
+ 
+=item parseFromYYYYMMDD: returns time epoch from datestring (yyyymmdd)
+
+ $dateStr .. datestring
+
+=item convertEpochToYYYYMMDD: returns datestring (yyyymmdd) from epoch/Time::piece
+
+ $arg .. date either as epoch (seconds since 1.1.1970) or as Time::piece object
 
 =head1 COPYRIGHT
 

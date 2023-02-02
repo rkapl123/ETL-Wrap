@@ -91,8 +91,18 @@ sub openDBConn {
 	my ($DB,$process) = ETL::Wrap::Common::extractConfigs($arg,"DB","process");
 	my $exitTry = 0;
 	$logger->info("openDBConn");
+	# only for set prefix, take username and password from $DB->{$DB->{prefix}}
+	my ($user,$pwd);
+	if ($DB->{prefix}) {
+		$user = $config{sensitive}{$DB->{prefix}}{user};
+		$pwd = $config{sensitive}{$DB->{prefix}}{pwd};
+	}
+	(!$DB->{user} && !$user && !$DB->{isTrusted}) and do {
+		$logger->error("\$DB->{isTrusted} not set and user neither set in \$DB->{user} nor in \$config{sensitive}{".$DB->{prefix}."}{user} !");
+		return 0;
+	};
 	do {
-		ETL::Wrap::DB::newDBH($DB,\%execute) or do {
+		ETL::Wrap::DB::newDBH($DB,\%execute,$user,$pwd) or do {
 			$exitTry = 1;
 			$logger->error("couldn't open database connection, DB config:\n".Dumper($DB));
 			retrySleepAbort($arg);
@@ -109,8 +119,18 @@ sub openFTPConn {
 	my ($FTP,$process) = ETL::Wrap::Common::extractConfigs($arg,"FTP","process");
 	my $exitTry = 0;
 	$logger->info("openFTPConn");
+	# only for set prefix, take username and password from $FTP->{$FTP->{prefix}}
+	my ($user,$pwd);
+	if ($FTP->{prefix}) {
+		$user = $config{sensitive}{$FTP->{prefix}}{user};
+		$pwd = $config{sensitive}{$FTP->{prefix}}{pwd};
+	}
+	(!$FTP->{user} && !$user) and do {
+		$logger->error("user neither set in \$FTP->{user} nor in \$config{sensitive}{".$FTP->{prefix}."}{user} !");
+		return 0;
+	};
 	do {
-		ETL::Wrap::FTP::login($FTP,\%execute) or do {
+		ETL::Wrap::FTP::login($FTP,\%execute,$user,$pwd) or do {
 			$exitTry = 1;
 			$logger->error("couldn't open ftp connection, FTP config:\n".Dumper($FTP));
 			retrySleepAbort($arg);
