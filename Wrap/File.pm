@@ -8,7 +8,7 @@ use Encode; use ETL::Wrap::DateUtil;
 our @ISA = qw(Exporter);
 our @EXPORT = qw(readText readExcel readXML writeText);
 
-# read text file
+# read text files
 sub readText {
 	my ($File, $process, $filenames) = @_;
 	my $logger = get_logger();
@@ -20,21 +20,15 @@ sub readText {
 	my $firstLineProc = $File->{firstLineProc};
 
 	# read format configuration
-	my ($poslen, $isFixLen, $skip, $sep, $autoheader); 
+	my ($poslen, $isFixLen, $skip, $sep); 
 	my (@header, @targetheader);
 	if (ref($File->{format}) eq "HASH") {
 		$skip = $File->{format}{skip} if $File->{format}{skip};
 		$sep = $File->{format}{sep} if $File->{format}{sep};
-		$autoheader = $File->{format}{autoheader} if $File->{format}{autoheader};
 		my $origsep = $sep;
 		if ($sep =~ /^fix/) {
-			my ($evalString) = ($sep =~ /fix=(.*?)$/);
-			# positions/length definitions from fix "separator" definition: e.g. "fix=$poslen=[(0,3),(3,3)]"
-			eval $evalString;
-			if ($@) {
-				$logger->error("error in eval position/length: $evalString:".$@);
-				return 0;
-			}
+			# positions/length definitions from poslen definition: e.g. "poslen => [(0,3),(3,3)]"
+			$poslen =  $File->{format}{poslen};
 			$sep = ";";
 			$isFixLen = 1;
 		} else {
@@ -45,7 +39,9 @@ sub readText {
 		}
 		@header = split $sep, $File->{format}{header} if $File->{format}{header};
 		@targetheader = split $sep, $File->{format}{targetheader} if $File->{format}{targetheader};
-		$logger->debug("skip: $skip ,sep: [".$origsep."], header: @header \nsyncheader: @targetheader \nlineProcessing:".$File->{LineCode}."\nfieldProcessing:".$File->{FieldCode}."\nfieldProcessingSpec:".Dumper($File->{FieldCodeSpec})."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing}."\nfirstLineProc:".$firstLineProc);
+		$Data::Dumper::Terse = 1;
+		$logger->debug("skip:$skip,sep:".Data::Dumper::qquote($origsep).",header:@header\nsyncheader:@targetheader\nlineProcessing:".$File->{LineCode}."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing}."\nfirstLineProc:".$firstLineProc);
+		$Data::Dumper::Terse = 0;
 	} else {
 		$logger->error("no format definition found in ".Dumper($File));
 		return 0;
@@ -71,7 +67,7 @@ sub readText {
 		{
 			my $newRecSep;
 			if ($File->{allowLinefeedInData}) {
-				# enable binmode and set line record separator to CRLF, so linefeeds in values don't create artificial new lines/records
+				# enable binmode and set line record separator to CRLF, so line feeds in values don't create artificial new lines/records
 				binmode(FILE, ":raw".$File->{encoding}); # raw so not to swallow CRLF
 				$newRecSep = "\015\012";
 				$logger->debug("binmode");
@@ -251,7 +247,7 @@ sub readExcel {
 		$logger->error("no targetheader defined") if !$File->{format}{targetheader};
 		@header = split $sep, $File->{format}{header};
 		@targetheader = split $sep, $File->{format}{targetheader};
-		$logger->debug("skip: ". $File->{format}{skip}.", header: @header \targetheader: @targetheader \nlineProcessing:".$File->{LineCode}."\nfieldProcessing:".$File->{FieldCode}."\nfieldProcessingSpec:".Dumper($File->{FieldCodeSpec})."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing});
+		$logger->debug("skip: ". $File->{format}{skip}.", header: @header \ntargetheader: @targetheader \nlineProcessing:".$File->{LineCode}."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing});
 	} else {
 		$logger->error("no format definition found in ".Dumper($File));
 		return 0;
@@ -359,7 +355,7 @@ sub readXML {
 		my $sep = "\t";
 		$logger->error("no header defined") if !$File->{format}{header};
 		@header = split $sep, $File->{format}{header};
-		$logger->debug("header: @header \nlineProcessing:".$File->{LineCode}."\nfieldProcessing:".$File->{FieldCode}."\nfieldProcessingSpec:".Dumper($File->{FieldCodeSpec})."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing});
+		$logger->debug("header: @header \nlineProcessing:".$File->{LineCode}."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing});
 	} else {
 		$logger->error("no format definitions found");
 		return 0;
@@ -477,19 +473,23 @@ sub writeText {
 	
 	my $filename = $File->{filename};
 	my $data = $process->{data};
+	if (ref($data) ne 'ARRAY') {
+		$logger->error("passed data in \$process is not a ref to array:".Dumper($process));
+		return 0;
+	}
 	my $beforeHeader = $File->{beforeHeader};
 	
 	my @columnnames; my @paddings;
 	if (ref($File->{columns}) eq 'HASH') {
 		@columnnames = map {$File->{columns}{$_}} sort keys %{$File->{columns}};
 	} else {
-		$logger->error("no field information given (columns => ref to hash)");
+		$logger->error("no field information given (columns should be ref to hash)");
 		return 0;
 	}
-	if (ref($File->{padding}) eq 'HASH') {
-		@paddings = map {$File->{padding}{$_}} sort keys %{$File->{padding}};
+	if (ref($File->{format}{padding}) eq 'HASH') {
+		@paddings = map {$File->{format}{padding}{$_}} sort keys %{$File->{format}{padding}};
 	} else {
-		if ($File->{format} eq "fix") {
+		if ($File->{format}{sep} eq "fix") {
 			$logger->error("no padding information given for fixed length format (padding => ref to hash)");
 			return 0;
 		}
@@ -502,8 +502,8 @@ sub writeText {
 	for my $colname (@columnnames) {
 		if (!$File->{columnskip}{$colname}) {
 			# first column has no separator before. if there is a special separator for heading, then use it, else the standard one
-			$headerRow = $headerRow.($firstcol ? "" : ($File->{sepHead} ? $File->{sepHead} : $File->{sep})).$colname if ($File->{format} eq "sep");
-			$headerRow = $headerRow.sprintf("%-*s%s", $paddings[$col],$colname) if ($File->{format} eq "fix");
+			$headerRow = $headerRow.($firstcol ? "" : ($File->{format}{sepHead} ? $File->{format}{sepHead} : $File->{format}{sep})).$colname if ($File->{format}{sep} ne "fix");
+			$headerRow = $headerRow.sprintf("%-*s%s", $paddings[$col],$colname) if ($File->{format}{sep} eq "fix");
 			$firstcol = 0;
 		}
 		$col++;
@@ -516,7 +516,7 @@ sub writeText {
 	};
 	# write header
 	print FHOUT $beforeHeader if $beforeHeader;
-	print FHOUT $headerRow."\n" unless $File->{suppressHeader};
+	print FHOUT $headerRow."\n" unless $File->{format}{suppressHeader};
 	
 	# write data
 	$logger->trace("passed data:\n".Dumper($data)) if $logger->is_trace;
@@ -530,14 +530,15 @@ sub writeText {
 			if (!$File->{columnskip}{$colname}) {
 				$logger->error("row passed in (\$process->{data}) is no ref to hash! should be \$VAR1 = {'key' => 'value', ...}:\n".Dumper($row)) if (ref($row) ne "HASH");
 				my $value = $row->{$colname};
-				$logger->trace("value for $colname: $value") if $logger->is_trace;
-				if ($File->{additionalColTrigger} && $File->{additionalColAction}) {
-					eval $File->{additionalColAction} if (eval $File->{additionalColTrigger});
+				$logger->trace("\$value for \$colname $colname: $value") if $logger->is_trace;
+				if ($File->{addtlProcessingTrigger} && $File->{addtlProcessing}) {
+					eval $File->{addtlProcessingTrigger} if (eval $File->{addtlProcessingTrigger});
+					$logger->error("error in eval addtlProcessing: ".$File->{addtlProcessingTrigger}.":".$@) if ($@);
 				}
 				# last column ($columnnames[@columnnames-1]) should have not separator afterwards
-				$lineRow = $lineRow.($firstcol ? "" : $File->{sep}).sprintf("%s", $value) if ($File->{format} eq "sep");
+				$lineRow = $lineRow.($firstcol ? "" : $File->{format}{sep}).sprintf("%s", $value) if ($File->{format}{sep} ne "fix");
 				# additional padding for fixed length format
-				$lineRow = $lineRow.sprintf("%-*s%s", $paddings[$col],$value) if ($File->{format} eq "fix");
+				$lineRow = $lineRow.sprintf("%-*s%s", $paddings[$col],$value) if ($File->{format}{sep} eq "fix");
 				$firstcol = 0;
 			}
 			$col++;

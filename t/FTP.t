@@ -1,11 +1,10 @@
 use strict; use warnings; use Log::Log4perl qw(get_logger); use Log::Log4perl::Level; use Test::More; use Data::Dumper;
 
 use ETL::Wrap::FTP; use ETL::Wrap::Common;
-
-LogCfgUtil::setupLogging("UnitTestFTPUtil");
+Log::Log4perl::init("testlog.config");
 my $logger = get_logger();
-get_logger("FTPUtil")->level($TRACE);
-$FTPUtil::parm = {
+
+$FTP::parm = {
 		RemoteHost => { "Prod" => "select.datascope.refinitiv.com", "Test" => "select.datascope.refinitiv.com"},
 		RemoteDir => "reports",
 		SFTP => 1,
@@ -14,9 +13,8 @@ $FTPUtil::parm = {
 		environment => "Test",
 };
 my $ftp;
-FTPUtil::login(\$ftp);
-ok($ftp,"login success");
-$ftp->quit() if !$FTPUtil::parm->{"SFTP"};
+ETL::Wrap::FTP::login();
+ok($ETL::Wrap::FTP::ftp,"login success");
 
 # TODO:
 # FTP login

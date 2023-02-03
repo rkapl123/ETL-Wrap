@@ -1,65 +1,41 @@
-C:\Strawberry>cpanm Log::Log4perl
 --> Working on Log::Log4perl
-Fetching http://www.cpan.org/authors/id/E/ET/ETJ/Log-Log4perl-1.57.tar.gz ... OK
 
-C:\Strawberry>cpanm Net::SFTP::Foreign
 --> Working on Net::SFTP::Foreign
-Fetching http://www.cpan.org/authors/id/S/SA/SALVA/Net-SFTP-Foreign-1.93.tar.gz ... OK
 
-C:\Strawberry>cpanm Data::XLSX::Parser
 --> Working on Data::XLSX::Parser
-Fetching http://www.cpan.org/authors/id/A/AC/ACIDLEMON/Data-XLSX-Parser-0.20.tar.gz ... OK
 
-C:\Strawberry>cpanm MIME::Lite
 --> Working on MIME::Lite
-Fetching http://www.cpan.org/authors/id/R/RJ/RJBS/MIME-Lite-3.033.tar.gz ... OK
 
-C:\Strawberry>cpanm Log::Dispatch::Email::MIMELite
 --> Working on Log::Dispatch::Email::MIMELite
-Fetching http://www.cpan.org/authors/id/D/DR/DROLSKY/Log-Dispatch-2.70.tar.gz ... OK
 
 ==> Found dependencies: Specio::Library::Builtins, Specio::Library::String, Specio, Params::ValidationCompiler, Test::Needs, Specio::Library::Numeric, Specio::Exporter, Specio::Declare
 --> Working on Specio::Library::Builtins
-Fetching http://www.cpan.org/authors/id/D/DR/DROLSKY/Specio-0.48.tar.gz ... OK
 
 ==> Found dependencies: Test::Needs, XString
 --> Working on Test::Needs
-Fetching http://www.cpan.org/authors/id/H/HA/HAARG/Test-Needs-0.002009.tar.gz ... OK
+
 --> Working on XString
-Fetching http://www.cpan.org/authors/id/A/AT/ATOOMIC/XString-0.005.tar.gz ... OK
 
 --> Working on Params::ValidationCompiler
-Fetching http://www.cpan.org/authors/id/D/DR/DROLSKY/Params-ValidationCompiler-0.30.tar.gz ... OK
 
 ==> Found dependencies: Test2::V0, Test2::Require::Module, Test2::Plugin::NoWarnings
 --> Working on Test2::V0
-Fetching http://www.cpan.org/authors/id/E/EX/EXODIST/Test2-Suite-0.000145.tar.gz ... OK
 
 ==> Found dependencies: Test2::API, Importer, Sub::Info, Term::Table
 --> Working on Test2::API
-Fetching http://www.cpan.org/authors/id/E/EX/EXODIST/Test-Simple-1.302191.tar.gz ... OK
 
 --> Working on Importer
-Fetching http://www.cpan.org/authors/id/E/EX/EXODIST/Importer-0.026.tar.gz ... OK
 
 --> Working on Sub::Info
-Fetching http://www.cpan.org/authors/id/E/EX/EXODIST/Sub-Info-0.002.tar.gz ... OK
 
 --> Working on Term::Table
-Fetching http://www.cpan.org/authors/id/E/EX/EXODIST/Term-Table-0.016.tar.gz ... OK
 
 --> Working on Test2::Plugin::NoWarnings
-Fetching http://www.cpan.org/authors/id/D/DR/DROLSKY/Test2-Plugin-NoWarnings-0.09.tar.gz ... OK
 
 --> Working on XML::LibXML::Debugging
-Fetching http://www.cpan.org/authors/id/T/TO/TOBYINK/XML-LibXML-Debugging-0.103.tar.gz ... OK
-Configuring XML-LibXML-Debugging-0.103 ... OK
-==> Found dependencies: HTML::HTML5::Entities
+
 --> Working on HTML::HTML5::Entities
-Fetching http://www.cpan.org/authors/id/T/TO/TOBYINK/HTML-HTML5-Entities-0.004.tar.gz ... OK
 
 --> Working on Win32::Console::ANSI
-Fetching http://www.cpan.org/authors/id/J/JL/JLMOREL/Win32-Console-ANSI-1.11.tar.gz ... OK
-Configuring Win32-Console-ANSI-1.11 ... OK
-Building and testing Win32-Console-ANSI-1.11 ... OK
-Successfully installed Win32-Console-ANSI-1.11 (upgraded from 1.10)
+
+Test::Files

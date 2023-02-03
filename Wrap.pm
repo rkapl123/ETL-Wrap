@@ -374,7 +374,7 @@ sub dumpDataIntoDB {
 				$logger->error("error storing DB data.. ");
 				$process->{hadDBErrors}=1;
 			}
-			# post processing for all configs, where postDumpProcessing is defined
+			# post processing (Perl code) for config, where postDumpProcessing is defined
 			if ($process->{postDumpProcessing}) {
 				$logger->info("starting postDumpProcessing");
 				$logger->debug($process->{postDumpProcessing});

@@ -162,30 +162,29 @@ my %hashCheck = (
 		ftpPre => {user => "", pwd => ""}, # set user/pwd for prefix ftpPre
 	},
 	File => {
-		additionalColAction => "",
-		additionalColTrigger => "",
 		addtlProcessingTrigger => "",
 		addtlProcessing => "",
 		avoidRenameForRedo => 1,
-		beforeHeader => "",
-		columns => {}, # columns: Hash of data fields, that are to be written (in order of keys)
-		columnskip => {},
+		columns => {}, # for writeText: Hash of data fields, that are to be written (in order of keys)
+		columnskip => {}, # for writeText: boolean hash of column names that should be skipped when writing the file ({column1ToSkip => 1, column2ToSkip => 1, ...})
 		customFile => "",
 		dontKeepHistory => 1,
 		emptyOK => 0,
 		encoding => "",
 		extract => 1,
 		extension => "",
-		fieldCode => "",
-		fieldCodeSpec => "",
 		filename => "",
 		firstLineProc => '',
 		format => {
+			beforeHeader => "",
 			header => "",
-			targetheader => "",
+			padding => {},
+			poslen => [],
 			sep => "",
 			sepHead => "",
 			skip => 2,
+			suppressHeader => 1,
+			targetheader => "",
 			xls => 1,
 			xlsx => 1,
 			XML => 1,
@@ -194,8 +193,6 @@ my %hashCheck = (
 		locale => "",
 		localFilesystemPath => "",
 		optional => 1,
-		padding => {},
-		suppressHeader => 1,
 	},
 	load => {
 		process => {}, # general processing configs
@@ -277,9 +274,10 @@ sub setupLogging {
 	die "can't log to logfolder $logFolder (set with \$process{logRootPath}+environment (".$process->{logRootPath}.$envpathExtend."), as it doesn't exist !" if (! -e $logFolder);
 	$LogFPath = $logFolder.$caller.".log";
 	$LogFPathDayBefore = $logFolder.get_curdate().".".$caller.".log"; # if mail is watched next day, show the rolled file here
-	die "no log.config existing in ".$ENV{ETL_WRAP_CONFIG_PATH}."/".$execute{envraw}."/log.config" if  (! -e $ENV{ETL_WRAP_CONFIG_PATH}."/".$execute{envraw}."/log.config");
-	Log::Log4perl::init($ENV{ETL_WRAP_CONFIG_PATH}."/".$execute{envraw}."/log.config"); # environment dependent log config, Prod is in ETL_WRAP_CONFIG_PATH
-	MIME::Lite->send('smtp', $config{smtpServer}, AuthUser=>$config{sensitive}{smtpAuth}{user}, AuthPass=>$config{sensitive}{smtpAuth}{pwd}, Timeout=>$config{smtpTimeout}); # configure err mail sending
+	my $logConfig = $ENV{ETL_WRAP_CONFIG_PATH}."/".$execute{envraw}."/log.config"; # environment dependent log config, Prod is in ETL_WRAP_CONFIG_PATH
+	die "no log.config existing in $logConfig" if  (! -e $logConfig);
+	Log::Log4perl::init($logConfig);
+	MIME::Lite->send('smtp', $config{smtpServer}, AuthUser=>$config{sensitive}{smtpAuth}{user}, AuthPass=>$config{sensitive}{smtpAuth}{pwd}, Timeout=>$config{smtpTimeout}) if $config{smtpServer}; # configure err mail sending
 
 	# get email from central log error handling $config{checkLookup}{<>};
 	$execute{errmailaddress} = $config{checkLookup}{$execute{scriptname}}{errmailaddress}; # errmailaddress for the process script
