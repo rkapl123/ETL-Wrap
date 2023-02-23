@@ -41,11 +41,9 @@ use ETL::Wrap; use Data::Dumper;
 			dontKeepHistory => 1,
 			filename => "test.txt",
 			locale => "german",
-			format => {
-				sep => "\t",
-				skip => 2,
-				header => "Registerkonto	InhaberNummer	Name	Kapital",
-			},
+			format_sep => "\t",
+			format_skip => 2,
+			format_header => "Registerkonto	InhaberNummer	Name	Kapital",
 			firstLineProc => 'my ($repyear,$repmonth,$repday)=/Kundenreport per (\d{4})-(\d{2})-(\d{2})/i; $main::loads[0]{ReferenceDate} = sprintf("%04d%02d%02d",$repyear,$repmonth,$repday);',
 		}
 	},
@@ -59,11 +57,9 @@ use ETL::Wrap; use Data::Dumper;
 			dontKeepHistory => 1,
 			filename => "test.txt",
 			locale => "german",
-			format => {
-				sep => "\t",
-				skip => 2,
-				header => "Registerkonto	InhaberNummer	Name	Kapital",
-			},
+			format_sep => "\t",
+			format_skip => 2,
+			format_header => "Registerkonto	InhaberNummer	Name	Kapital",
 			firstLineProc => 'my ($repyear,$repmonth,$repday)=/Kundenreport per (\d{4})-(\d{2})-(\d{2})/i; $main::loads[0]{ReferenceDate} = sprintf("%04d%02d%02d",$repyear,$repmonth,$repday);',
 		}
 	},

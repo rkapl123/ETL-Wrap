@@ -39,3 +39,9 @@
 --> Working on Win32::Console::ANSI
 
 Test::Files
+
+Spreadsheet::WriteExcel
+
+Spreadsheet::ParseExcel
+
+Excel::Writer::XLSX

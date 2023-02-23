@@ -330,9 +330,9 @@ sub readFileData {
 	my ($File,$process) = ETL::Wrap::Common::extractConfigs($arg,"File","process");
 	$logger->info("readFileData");
 	my $readSuccess;
-	if ($File->{format}{xlsx} or $File->{format}{xls}) {
+	if ($File->{format_xlformat}) {
 		$readSuccess = ETL::Wrap::File::readExcel($File, $process, $execute{filenames});
-	} elsif ($File->{format}{XML}) {
+	} elsif ($File->{format_XML}) {
 		$readSuccess = ETL::Wrap::File::readXML($File, $process, $execute{filenames});
 	} else {
 		$readSuccess = ETL::Wrap::File::readText($File, $process, $execute{filenames});

@@ -1,12 +1,12 @@
 package ETL::Wrap::File;
 
 use strict; 
-use Text::CSV; use Data::XLSX::Parser; use Spreadsheet::ParseExcel; use Exporter;
+use Text::CSV; use Data::XLSX::Parser; use Spreadsheet::ParseExcel; use Spreadsheet::WriteExcel; use Excel::Writer::XLSX; use Exporter; use Cwd;
 use Log::Log4perl qw(get_logger); use Time::localtime; use Data::Dumper; use XML::LibXML; use Scalar::Util qw(looks_like_number); use XML::LibXML::Debugging;
 use Encode; use ETL::Wrap::DateUtil; 
 
 our @ISA = qw(Exporter);
-our @EXPORT = qw(readText readExcel readXML writeText);
+our @EXPORT = qw(readText readExcel readXML writeText writeExcel);
 
 # read text files
 sub readText {
@@ -22,30 +22,26 @@ sub readText {
 	# read format configuration
 	my ($poslen, $isFixLen, $skip, $sep); 
 	my (@header, @targetheader);
-	if (ref($File->{format}) eq "HASH") {
-		$skip = $File->{format}{skip} if $File->{format}{skip};
-		$sep = $File->{format}{sep} if $File->{format}{sep};
-		my $origsep = $sep;
-		if ($sep =~ /^fix/) {
-			# positions/length definitions from poslen definition: e.g. "poslen => [(0,3),(3,3)]"
-			$poslen =  $File->{format}{poslen};
-			$sep = ";";
-			$isFixLen = 1;
-		} else {
-			if (!$sep) {
-				$logger->error("no separator set in ".Dumper($File)) ;
-				return 0;
-			}
-		}
-		@header = split $sep, $File->{format}{header} if $File->{format}{header};
-		@targetheader = split $sep, $File->{format}{targetheader} if $File->{format}{targetheader};
-		$Data::Dumper::Terse = 1;
-		$logger->debug("skip:$skip,sep:".Data::Dumper::qquote($origsep).",header:@header\nsyncheader:@targetheader\nlineProcessing:".$File->{LineCode}."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing}."\nfirstLineProc:".$firstLineProc);
-		$Data::Dumper::Terse = 0;
+	$skip = $File->{format_skip} if $File->{format_skip};
+	$sep = $File->{format_sep} if $File->{format_sep};
+	my $origsep = $sep;
+	if ($sep =~ /^fix/) {
+		# positions/length definitions from poslen definition: e.g. "poslen => [(0,3),(3,3)]"
+		$poslen =  $File->{format_poslen};
+		$sep = ";";
+		$isFixLen = 1;
 	} else {
-		$logger->error("no format definition found in ".Dumper($File));
-		return 0;
+		if (!$sep) {
+			$logger->error("no separator set in ".Dumper($File)) ;
+			return 0;
+		}
 	}
+	@header = split $sep, $File->{format_header} if $File->{format_header};
+	@targetheader = split $sep, $File->{format_targetheader} if $File->{format_targetheader};
+	$Data::Dumper::Terse = 1;
+	$logger->debug("skip:$skip,sep:".Data::Dumper::qquote($origsep).",header:@header\nsyncheader:@targetheader\nlineProcessing:".$File->{LineCode}."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing}."\nfirstLineProc:".$firstLineProc);
+	$Data::Dumper::Terse = 0;
+
 
 	# read all files with same format
 	for my $filename (@filenames) {
@@ -61,12 +57,13 @@ sub readText {
 		my $sv = Text::CSV->new ({
 			binary    => 1,
 			auto_diag => 1,
-			sep_char  => $sep
+			sep_char  => $sep,
+			eol => ($File->{format_eol} ? $File->{format_eol} : $/),
 		});
 		# local context for special line record separator
 		{
 			my $newRecSep;
-			if ($File->{allowLinefeedInData}) {
+			if ($File->{format_allowLinefeedInData}) {
 				# enable binmode and set line record separator to CRLF, so line feeds in values don't create artificial new lines/records
 				binmode(FILE, ":raw".$File->{encoding}); # raw so not to swallow CRLF
 				$newRecSep = "\015\012";
@@ -116,7 +113,7 @@ LINE:
 						$line[$i] = substr ($_, $poslen->[$i][0],$poslen->[$i][1]-$poslen->[$i][0]);
 					}
 				} else {
-					if ($File->{format}{quotedcsv}) {
+					if ($File->{format_quotedcsv}) {
 						if ($sv->parse($_)) {
 							@line = $sv->fields();
 						} else {
@@ -225,7 +222,7 @@ sub row_handlerXLSX {
 sub readExcel {
 	my ($File, $process, $filenames) = @_;
 	my $logger = get_logger();
-	$stopOnEmptyValueColumn = $File->{format}{stopOnEmptyValueColumn};
+	$stopOnEmptyValueColumn = $File->{format_stopOnEmptyValueColumn};
 	$stoppedOnEmptyValue = 0; # reset
 	my @filenames = @{$filenames} if $filenames;
 	my $redoSubDir = $process->{redoDir}."/" if $process->{redoFile};
@@ -242,19 +239,19 @@ sub readExcel {
 	my (@header, @targetheader);
 	if (ref($File->{format}) eq "HASH") {
 		my $sep = "\t";
-		$startRow += $File->{format}{skip} if $File->{format}{skip};
-		$logger->error("no header defined") if !$File->{format}{header};
-		$logger->error("no targetheader defined") if !$File->{format}{targetheader};
-		@header = split $sep, $File->{format}{header};
-		@targetheader = split $sep, $File->{format}{targetheader};
-		$logger->debug("skip: ". $File->{format}{skip}.", header: @header \ntargetheader: @targetheader \nlineProcessing:".$File->{LineCode}."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing});
+		$startRow += $File->{format_skip} if $File->{format_skip};
+		$logger->error("no header defined") if !$File->{format_header};
+		$logger->error("no targetheader defined") if !$File->{format_targetheader};
+		@header = split $sep, $File->{format_header};
+		@targetheader = split $sep, $File->{format_targetheader};
+		$logger->debug("skip: ". $File->{format_skip}.", header: @header \ntargetheader: @targetheader \nlineProcessing:".$File->{LineCode}."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing});
 	} else {
 		$logger->error("no format definition found in ".Dumper($File));
 		return 0;
 	}
 	# prepare date field lookup
-	if ($File->{format}{dateColumns}) {
-		for my $col (@{$File->{format}{dateColumns}}) {
+	if ($File->{format_dateColumns}) {
+		for my $col (@{$File->{format_dateColumns}}) {
 			$dateColumn{$col} = 1;
 		}
 	}
@@ -262,13 +259,13 @@ sub readExcel {
 	# headerColumn: needed target column -> target field name
 	# xlheader: original column name -> expected content in header cell
 	my $i=0;
-	for my $col (@{$File->{format}{headerColumns}}) {
+	for my $col (@{$File->{format_headerColumns}}) {
 		$headerColumn{$col} = $targetheader[$i];
 		$xlheader{$col} = $header[$i];
 		$i++;
 	}
 	@header = @targetheader;
-
+	
 	# read all files with same format
 	for my $filename (@filenames) {
 		# reset module global variables
@@ -278,32 +275,32 @@ sub readExcel {
 
 		# check excel file existence
 		if (! -e $redoSubDir.$filename) {
-			$logger->error("no excel file ($filename) to process") unless ($File->{optional});
+			$logger->error("no excel file ($filename) to process: $!") unless ($File->{optional});
 			$logger->warn("no file $redoSubDir$filename found"); 
 			return 0;
 		}
 
 		# read in excel file
 		my $parser;
-		if ($File->{format}{xlsx}) {
+		if ($File->{format_xlformat} =~ /^xlsx$/i) {
 			$logger->info("open xlsx file $redoSubDir$filename ... ");
 			$parser = Data::XLSX::Parser->new;
 			$parser->open($redoSubDir.$filename);
 			$parser->add_row_event_handler(\&row_handlerXLSX);
 
-			if ($File->{format}{worksheet}) {
-				$worksheet = $parser->workbook->sheet_id($File->{format}{worksheet});
-				$logger->logdie("no worksheet found named ".$File->{format}{worksheet}.", maybe try {format}{worksheetID} (numerically ordered place)") if !$worksheet;
-			} elsif ($File->{format}{worksheetID}) {
-				$worksheet = $File->{format}{worksheetID};
+			if ($File->{format_worksheet}) {
+				$worksheet = $parser->workbook->sheet_id($File->{format_worksheet});
+				$logger->logdie("no worksheet found named ".$File->{format_worksheet}.", maybe try {format_worksheetID} (numerically ordered place)") if !$worksheet;
+			} elsif ($File->{format_worksheetID}) {
+				$worksheet = $File->{format_worksheetID};
 			} else {
 				$logger->logdie("neither worksheetname nor worksheetID (numerically ordered place) given");
 			}
-			$logger->info("starting parser for sheet name: ".$File->{format}{worksheet}.", id:".$worksheet);
+			$logger->info("starting parser for xlsx sheet name: ".$File->{format_worksheet}.", id:".$worksheet);
 			$parser->sheet_by_id($worksheet);
-		} else {
-			$logger->warn("worksheets can't be found by name for the old xls format, please pass numerically ordered place in {format}{worksheetID}") if ($File->{format}{worksheet});
-			$worksheet = $File->{format}{worksheetID} if $File->{format}{worksheetID};
+		} elsif ($File->{format_xlformat} =~ /^xls$/i) {
+			$logger->warn("worksheets can't be found by name for the old xls format, please pass numerically ordered place in {format_worksheetID}") if ($File->{format_worksheet});
+			$worksheet = $File->{format_worksheetID} if $File->{format_worksheetID};
 			$logger->info("starting parser for xls file $redoSubDir$filename ... ");
 			$parser = Spreadsheet::ParseExcel->new(
 				CellHandler => \&cell_handler,
@@ -314,6 +311,9 @@ sub readExcel {
 				$logger->error("excel parsing error: ".$parser->error());
 				return 0;
 			}
+		} else {
+			$logger->error("unrecognised excel format passed in \$File->{format_xlformat}:".$File->{format_xlformat});
+			return 0;
 		}
 
 		# iterate rows
@@ -323,13 +323,13 @@ LINE:
 			@previousline = @line;
 			@line = undef;
 			# get @line from stored values
-			for (my $i = 0; $i < @{$File->{format}{headerColumns}}; $i++) {
+			for (my $i = 0; $i < @{$File->{format_headerColumns}}; $i++) {
 				$line[$i] = $dataRows{$lineno}{$header[$i]};
 			}
 			readRow($process,\@line,\@previousline,\@header,\@targetheader,undef,$lineProcessing,$addtlProcessingTrigger,$addtlProcessing,$File->{locale},$lineno);
 		}
 		close FILE;
-		if (!$process->{data} and !$File->{emptyOK}) {
+		if (scalar(@{$process->{data}}) == 0 and !$File->{emptyOK}) {
 			$logger->error("Empty file: $filename, no data returned !!");
 			return 0;
 		}
@@ -353,8 +353,8 @@ sub readXML {
 	my (@header, @targetheader);
 	if (ref($File->{format}) eq "HASH") {
 		my $sep = "\t";
-		$logger->error("no header defined") if !$File->{format}{header};
-		@header = split $sep, $File->{format}{header};
+		$logger->error("no header defined") if !$File->{format_header};
+		@header = split $sep, $File->{format_header};
 		$logger->debug("header: @header \nlineProcessing:".$File->{LineCode}."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing});
 	} else {
 		$logger->error("no format definitions found");
@@ -372,12 +372,12 @@ sub readXML {
 
 		my $xmldata = XML::LibXML->load_xml(location => $redoSubDir.$filename, no_blanks => 1);
 		my $xpc = XML::LibXML::XPathContext->new($xmldata);
-		if (ref($File->{format}{namespaces}) eq 'HASH') {
-			$xpc->registerNs($_, $File->{format}{namespaces}{$_}) for keys (%{$File->{format}{namespaces}});
+		if (ref($File->{format_namespaces}) eq 'HASH') {
+			$xpc->registerNs($_, $File->{format_namespaces}{$_}) for keys (%{$File->{format_namespaces}});
 		}
-		$logger->error("no xpathRecordLevel passed in format") unless ($File->{format}{xpathRecordLevel});
-		$logger->error("no fieldXpath hash passed in format") unless ($File->{format}{fieldXpath} && ref($File->{format}{fieldXpath}) eq 'HASH');
-		my @records = $xpc->findnodes($File->{format}{xpathRecordLevel});
+		$logger->error("no xpathRecordLevel passed in format") unless ($File->{format_xpathRecordLevel});
+		$logger->error("no fieldXpath hash passed in format") unless ($File->{format_fieldXpath} && ref($File->{format_fieldXpath}) eq 'HASH');
+		my @records = $xpc->findnodes($File->{format_xpathRecordLevel});
 		$logger->warn("no records found") if @records == 0;
 		# iterate through all rows of file
 		my $lineno = 0;
@@ -387,14 +387,14 @@ sub readXML {
 			@line = undef;
 			# get @line from stored values
 			if (ref($record) eq "XML::LibXML::Element") {
-				my @headerColumns = keys (%{$File->{format}{fieldXpath}});
+				my @headerColumns = keys (%{$File->{format_fieldXpath}});
 				for (my $i = 0; $i < @headerColumns; $i++) {
-					if ($File->{format}{fieldXpath}{$header[$i]} =~ /^\//) {
+					if ($File->{format_fieldXpath}{$header[$i]} =~ /^\//) {
 						# absolute paths -> leave context node and find in the root doc. 
-						$line[$i] = $xpc->findvalue($File->{format}{fieldXpath}{$header[$i]});
+						$line[$i] = $xpc->findvalue($File->{format_fieldXpath}{$header[$i]});
 					} else {
 						# relative paths -> context node is current record node 
-						$line[$i] = $xpc->findvalue($File->{format}{fieldXpath}{$header[$i]}, $record);
+						$line[$i] = $xpc->findvalue($File->{format_fieldXpath}{$header[$i]}, $record);
 					}
 				}
 			}
@@ -478,7 +478,14 @@ sub writeText {
 		return 0;
 	}
 	my $beforeHeader = $File->{beforeHeader};
-	
+	# in case we need to print out csv/quoted values
+	my $sv = Text::CSV->new ({
+			binary    => 1,
+			auto_diag => 1,
+			sep_char  => $File->{format_sep},
+			eol => ($File->{format_eol} ? $File->{format_eol} : $/),
+		});
+
 	my @columnnames; my @paddings;
 	if (ref($File->{columns}) eq 'HASH') {
 		@columnnames = map {$File->{columns}{$_}} sort keys %{$File->{columns}};
@@ -486,10 +493,10 @@ sub writeText {
 		$logger->error("no field information given (columns should be ref to hash)");
 		return 0;
 	}
-	if (ref($File->{format}{padding}) eq 'HASH') {
-		@paddings = map {$File->{format}{padding}{$_}} sort keys %{$File->{format}{padding}};
+	if (ref($File->{format_padding}) eq 'HASH') {
+		@paddings = map {$File->{format_padding}{$_}} sort keys %{$File->{format_padding}};
 	} else {
-		if ($File->{format}{sep} eq "fix") {
+		if ($File->{format_sep} eq "fix") {
 			$logger->error("no padding information given for fixed length format (padding => ref to hash)");
 			return 0;
 		}
@@ -501,10 +508,14 @@ sub writeText {
 	my $firstcol = 1;
 	for my $colname (@columnnames) {
 		if (!$File->{columnskip}{$colname}) {
-			# first column has no separator before. if there is a special separator for heading, then use it, else the standard one
-			$headerRow = $headerRow.($firstcol ? "" : ($File->{format}{sepHead} ? $File->{format}{sepHead} : $File->{format}{sep})).$colname if ($File->{format}{sep} ne "fix");
-			$headerRow = $headerRow.sprintf("%-*s%s", $paddings[$col],$colname) if ($File->{format}{sep} eq "fix");
-			$firstcol = 0;
+			if ($File->{format_quotedcsv}) {
+				push @$headerRow, $colname;
+			} else {
+				# first column has no separator before. if there is a special separator for heading, then use it, else the standard one
+				$headerRow = $headerRow.($firstcol ? "" : ($File->{format_sepHead} ? $File->{format_sepHead} : $File->{format_sep})).$colname if ($File->{format_sep} ne "fix");
+				$headerRow = $headerRow.sprintf("%-*s%s", $paddings[$col],$colname) if ($File->{format_sep} eq "fix");
+				$firstcol = 0;
+			}
 		}
 		$col++;
 	}
@@ -516,7 +527,16 @@ sub writeText {
 	};
 	# write header
 	print FHOUT $beforeHeader if $beforeHeader;
-	print FHOUT $headerRow."\n" unless $File->{format}{suppressHeader};
+	unless ($File->{format_suppressHeader}) {
+		if ($File->{format_quotedcsv}) {
+			if (!$sv->print(\*FHOUT, $headerRow)) {
+				$logger->error("error writing quoted csv header row: ".$sv->error_diag());
+				return 0;
+			}
+		} else {
+			print FHOUT $headerRow."\n";
+		}
+	}
 	
 	# write data
 	$logger->trace("passed data:\n".Dumper($data)) if $logger->is_trace;
@@ -528,6 +548,108 @@ sub writeText {
 		my $col = 0; $firstcol = 1;
 		for my $colname (@columnnames) {
 			if (!$File->{columnskip}{$colname}) {
+				if (ref($row) ne "HASH") {
+					$logger->error("row passed in (\$process->{data}) is no ref to hash! should be \$VAR1 = {'key' => 'value', ...}:\n".Dumper($row));
+					return 0;
+				}
+				my $value = $row->{$colname};
+				$logger->trace("\$value for \$colname $colname: $value") if $logger->is_trace;
+				if ($File->{addtlProcessingTrigger} && $File->{addtlProcessing}) {
+					eval $File->{addtlProcessingTrigger} if (eval $File->{addtlProcessingTrigger});
+					if ($@) {
+						$logger->error("error in eval addtlProcessing: ".$File->{addtlProcessingTrigger}.":".$@);
+						return 0;
+					}
+				}
+				if ($File->{format_quotedcsv}) {
+					push @$lineRow, $value;
+				} else {
+					# last column ($columnnames[@columnnames-1]) should have not separator afterwards
+					$lineRow = $lineRow.($firstcol ? "" : $File->{format_sep}).sprintf("%s", $value) if ($File->{format_sep} ne "fix");
+					# additional padding for fixed length format
+					$lineRow = $lineRow.sprintf("%-*s%s", $paddings[$col],$value) if ($File->{format_sep} eq "fix");
+					$firstcol = 0;
+				}
+			}
+			$col++;
+		}
+		if ($File->{format_quotedcsv}) {
+			if (!$sv->print(\*FHOUT, $lineRow)) {
+				$logger->error("error writing quoted csv row: ".$sv->error_diag());
+				return 0;
+			}
+		} else {
+			print FHOUT $lineRow."\n";
+		}
+		
+		$logger->trace("row: ".$lineRow) if $logger->is_trace();
+	}
+	close FHOUT;
+	return 1;
+}
+
+# write Excel file
+sub writeExcel {
+	my ($File, $process) = @_;
+	my $logger = get_logger();
+	
+	my $data = $process->{data};
+	if (ref($data) ne 'ARRAY') {
+		$logger->error("passed data in \$process is not a ref to array:".Dumper($process));
+		return 0;
+	}
+
+	my @columnnames;
+	if (ref($File->{columns}) eq 'HASH') {
+		@columnnames = map {$File->{columns}{$_}} sort keys %{$File->{columns}};
+	} else {
+		$logger->error("no field information given (columns should be ref to hash)");
+		return 0;
+	}
+
+	my ($workbook,$worksheet);
+	if ($File->{format_xlformat} =~ /^xls$/i) {
+		$logger->debug("writing to xls format file ".$File->{filename});
+		$workbook = Spreadsheet::WriteExcel->new($File->{filename}) or do {
+			$logger->error("xls file creation error: $!");
+			return 0;
+		};
+	} elsif ($File->{format_xlformat} =~ /^xlsx$/i) {
+		$logger->debug("writing to xlsx format file ".$File->{filename});
+		$workbook = Excel::Writer::XLSX->new($File->{filename}) or do {
+			$logger->error("xlsx file creation error: $!");
+			return 0;
+		};
+	} else {
+		$logger->error("unrecognised excel format passed in \$File->{format_xlformat}:".$File->{format_xlformat}." (allowed: xls and xlsx)");
+		return 0;
+	}
+	# Add a worksheet
+	$worksheet = $workbook->add_worksheet();
+
+	$logger->debug("fields: @columnnames");
+	my @headerRow;
+	for my $colname (@columnnames) {
+		if (!$File->{columnskip}{$colname}) {
+			push @headerRow, $colname;
+		}
+	}
+	# write header
+	unless ($File->{format_suppressHeader}) {
+		for my $col (0 .. @headerRow) {
+			$worksheet->write(0,$col,$headerRow[$col]);
+		}
+	}
+	
+	# write data
+	$logger->trace("passed data:\n".Dumper($data)) if $logger->is_trace;
+	for (my $i=0; $i<scalar(@{$data}); $i++) {
+		# data row
+		my $row = $data->[$i];
+		my @lineRow;
+		# chain all data in a row
+		for my $colname (@columnnames) {
+			if (!$File->{columnskip}{$colname}) {
 				$logger->error("row passed in (\$process->{data}) is no ref to hash! should be \$VAR1 = {'key' => 'value', ...}:\n".Dumper($row)) if (ref($row) ne "HASH");
 				my $value = $row->{$colname};
 				$logger->trace("\$value for \$colname $colname: $value") if $logger->is_trace;
@@ -535,18 +657,14 @@ sub writeText {
 					eval $File->{addtlProcessingTrigger} if (eval $File->{addtlProcessingTrigger});
 					$logger->error("error in eval addtlProcessing: ".$File->{addtlProcessingTrigger}.":".$@) if ($@);
 				}
-				# last column ($columnnames[@columnnames-1]) should have not separator afterwards
-				$lineRow = $lineRow.($firstcol ? "" : $File->{format}{sep}).sprintf("%s", $value) if ($File->{format}{sep} ne "fix");
-				# additional padding for fixed length format
-				$lineRow = $lineRow.sprintf("%-*s%s", $paddings[$col],$value) if ($File->{format}{sep} eq "fix");
-				$firstcol = 0;
+				push @lineRow, $value;
 			}
-			$col++;
 		}
-		print FHOUT $lineRow."\n";
-		$logger->trace("row: ".$lineRow) if $logger->is_trace();
+		for my $col (0 .. @lineRow) {
+			$worksheet->write($i+1,$col,$lineRow[$col]);
+		}
+		$logger->trace("row: ".@lineRow) if $logger->is_trace();
 	}
-	close FHOUT;
 	return 1;
 }
 1;
