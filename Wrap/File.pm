@@ -237,18 +237,13 @@ sub readExcel {
 
 	# read format configuration
 	my (@header, @targetheader);
-	if (ref($File->{format}) eq "HASH") {
-		my $sep = "\t";
-		$startRow += $File->{format_skip} if $File->{format_skip};
-		$logger->error("no header defined") if !$File->{format_header};
-		$logger->error("no targetheader defined") if !$File->{format_targetheader};
-		@header = split $sep, $File->{format_header};
-		@targetheader = split $sep, $File->{format_targetheader};
-		$logger->debug("skip: ". $File->{format_skip}.", header: @header \ntargetheader: @targetheader \nlineProcessing:".$File->{LineCode}."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing});
-	} else {
-		$logger->error("no format definition found in ".Dumper($File));
-		return 0;
-	}
+	my $sep = "\t";
+	$startRow += $File->{format_skip} if $File->{format_skip};
+	$logger->error("no header defined") if !$File->{format_header};
+	$logger->error("no targetheader defined") if !$File->{format_targetheader};
+	@header = split $sep, $File->{format_header};
+	@targetheader = split $sep, $File->{format_targetheader};
+	$logger->debug("skip: ". $File->{format_skip}.", header: @header \ntargetheader: @targetheader \nlineProcessing:".$File->{LineCode}."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing});
 	# prepare date field lookup
 	if ($File->{format_dateColumns}) {
 		for my $col (@{$File->{format_dateColumns}}) {
@@ -259,12 +254,26 @@ sub readExcel {
 	# headerColumn: needed target column -> target field name
 	# xlheader: original column name -> expected content in header cell
 	my $i=0;
-	for my $col (@{$File->{format_headerColumns}}) {
-		$headerColumn{$col} = $targetheader[$i];
-		$xlheader{$col} = $header[$i];
-		$i++;
+	if ($File->{format_headerColumns} and ref($File->{format_headerColumns}) eq "ARRAY") {
+		$logger->debug("reading header definitions from format_headerColumns");
+		if (@{$File->{format_headerColumns}} != @header or @{$File->{format_headerColumns}} != @targetheader) {
+			$logger->error("format_headerColumns has different length than format_header or format_targetheader definitions");
+			return 0;
+		}
+		for my $col (@{$File->{format_headerColumns}}) {
+			$headerColumn{$col} = $targetheader[$i];
+			$xlheader{$col} = $header[$i];
+			$i++;
+		}
+	} else {
+		$logger->debug("no format_headerColumns given, reading header definitions directly from \@header assuming simple list starting with column 1 having \@header length columns");
+		for (@header) {
+			$headerColumn{$i+1} = $targetheader[$i];
+			$xlheader{$i+1} = $header[$i];
+			$i++;
+		}
 	}
-	@header = @targetheader;
+	@header = @targetheader; # in the end only target header is important
 	
 	# read all files with same format
 	for my $filename (@filenames) {
@@ -283,7 +292,7 @@ sub readExcel {
 		# read in excel file
 		my $parser;
 		if ($File->{format_xlformat} =~ /^xlsx$/i) {
-			$logger->info("open xlsx file $redoSubDir$filename ... ");
+			$logger->debug("open xlsx file $redoSubDir$filename ... ");
 			$parser = Data::XLSX::Parser->new;
 			$parser->open($redoSubDir.$filename);
 			$parser->add_row_event_handler(\&row_handlerXLSX);
@@ -296,12 +305,12 @@ sub readExcel {
 			} else {
 				$logger->logdie("neither worksheetname nor worksheetID (numerically ordered place) given");
 			}
-			$logger->info("starting parser for xlsx sheet name: ".$File->{format_worksheet}.", id:".$worksheet);
+			$logger->debug("starting parser for xlsx sheet name: ".$File->{format_worksheet}.", id:".$worksheet);
 			$parser->sheet_by_id($worksheet);
 		} elsif ($File->{format_xlformat} =~ /^xls$/i) {
 			$logger->warn("worksheets can't be found by name for the old xls format, please pass numerically ordered place in {format_worksheetID}") if ($File->{format_worksheet});
 			$worksheet = $File->{format_worksheetID} if $File->{format_worksheetID};
-			$logger->info("starting parser for xls file $redoSubDir$filename ... ");
+			$logger->debug("starting parser for xls file $redoSubDir$filename ... ");
 			$parser = Spreadsheet::ParseExcel->new(
 				CellHandler => \&cell_handler,
 				NotSetCell  => 1
@@ -323,7 +332,7 @@ LINE:
 			@previousline = @line;
 			@line = undef;
 			# get @line from stored values
-			for (my $i = 0; $i < @{$File->{format_headerColumns}}; $i++) {
+			for (my $i = 0; $i < @header; $i++) {
 				$line[$i] = $dataRows{$lineno}{$header[$i]};
 			}
 			readRow($process,\@line,\@previousline,\@header,\@targetheader,undef,$lineProcessing,$addtlProcessingTrigger,$addtlProcessing,$File->{locale},$lineno);
@@ -351,15 +360,14 @@ sub readXML {
 
 	# read format configuration
 	my (@header, @targetheader);
-	if (ref($File->{format}) eq "HASH") {
-		my $sep = "\t";
-		$logger->error("no header defined") if !$File->{format_header};
-		@header = split $sep, $File->{format_header};
-		$logger->debug("header: @header \nlineProcessing:".$File->{LineCode}."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing});
-	} else {
-		$logger->error("no format definitions found");
+	my $sep = $File->{format_sep};
+	if (!$sep) {
+		$logger->error("no separator set in ".Dumper($File));
 		return 0;
 	}
+	$logger->error("no header defined") if !$File->{format_header};
+	@header = split $sep, $File->{format_header};
+	$logger->debug("header: @header \nlineProcessing:".$File->{LineCode}."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing});
 	@targetheader = @header;
 
 	# read all files with same format
@@ -375,8 +383,10 @@ sub readXML {
 		if (ref($File->{format_namespaces}) eq 'HASH') {
 			$xpc->registerNs($_, $File->{format_namespaces}{$_}) for keys (%{$File->{format_namespaces}});
 		}
-		$logger->error("no xpathRecordLevel passed in format") unless ($File->{format_xpathRecordLevel});
-		$logger->error("no fieldXpath hash passed in format") unless ($File->{format_fieldXpath} && ref($File->{format_fieldXpath}) eq 'HASH');
+		$logger->error("no format_xpathRecordLevel passed") unless ($File->{format_xpathRecordLevel});
+		$logger->error("no format_fieldXpath hash passed") unless ($File->{format_fieldXpath} && ref($File->{format_fieldXpath}) eq 'HASH');
+		$logger->trace("format_xpathRecordLevel: ".$File->{format_xpathRecordLevel}) if $logger->is_trace;
+		$logger->trace("format_fieldXpath: ".Dumper($File->{format_fieldXpath})) if $logger->is_trace;
 		my @records = $xpc->findnodes($File->{format_xpathRecordLevel});
 		$logger->warn("no records found") if @records == 0;
 		# iterate through all rows of file
@@ -389,11 +399,12 @@ sub readXML {
 			if (ref($record) eq "XML::LibXML::Element") {
 				my @headerColumns = keys (%{$File->{format_fieldXpath}});
 				for (my $i = 0; $i < @headerColumns; $i++) {
+					$logger->trace("field:".$header[$i].",\$File->{format_fieldXpath}{".$header[$i]."}:".$File->{format_fieldXpath}{$header[$i]}) if $logger->is_trace;
 					if ($File->{format_fieldXpath}{$header[$i]} =~ /^\//) {
-						# absolute paths -> leave context node and find in the root doc. 
+						# absolute paths -> leave context node and find in the root doc (no context node argument).
 						$line[$i] = $xpc->findvalue($File->{format_fieldXpath}{$header[$i]});
 					} else {
-						# relative paths -> context node is current record node 
+						# relative paths -> context node is current record node
 						$line[$i] = $xpc->findvalue($File->{format_fieldXpath}{$header[$i]}, $record);
 					}
 				}
@@ -462,7 +473,7 @@ sub readRow {
 			$logger->trace("previoustempline:\n".Dumper(\%previoustempline));
 		}
 	}
-	$logger->trace('line:\n'.Dumper(\%line)) if $logger->is_trace;
+	$logger->trace("line:\n".Dumper(\%line)) if $logger->is_trace;
 	push @{$process->{data}}, \%line if %line;
 }
 
@@ -679,6 +690,7 @@ ETL::Wrap::File - read/parse Files from the filesystem or write to the filesyste
  readExcel ($File, $process, $filenames)
  readXML ($File, $process, $filenames)
  writeText ($File, $process)
+ writeExcel ($File, $process)
 
 =head1 DESCRIPTION
 
@@ -705,6 +717,11 @@ ETL::Wrap::File - read/parse Files from the filesystem or write to the filesyste
  $filenames .. Array von filenamen, falls explizit array of file names, if explizit (given in case of mget and unpacked zip archives).
 
 =item writeFile: writes a text file using specified parameters from array of hashes (DB structure) 
+
+ $File      .. hash ref for File specific configuration
+ $process   .. hash ref for process specific configuration and returned data (hashkey "data" -> above mentioned array of hashes)
+
+=item writeExcel: writes an excel file using specified parameters from array of hashes (DB structure) 
 
  $File      .. hash ref for File specific configuration
  $process   .. hash ref for process specific configuration and returned data (hashkey "data" -> above mentioned array of hashes)
