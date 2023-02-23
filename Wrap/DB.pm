@@ -6,9 +6,10 @@ use DBI qw(:sql_types); use DBD::ODBC; use Data::Dumper; use Log::Log4perl qw(ge
 our @ISA = qw(Exporter);
 our @EXPORT = qw(newDBH beginWork commit rollback readFromDB readFromDBHash doInDB storeInDB deleteFromDB updateInDB);
 
-my $dbh;
-my $DSN;
+my $dbh; # module static handle, will be dynamic when using OO-Style here
+my $DSN; # module static DSN string, will be dynamic when using OO-Style here
 
+# create a new handle for a database connection
 sub newDBH {
 	my ($DB,$execute,$user,$pwd) = @_;
 	my $logger = get_logger();
@@ -33,6 +34,7 @@ sub newDBH {
 	}
 }
 
+# start transaction in database
 sub beginWork {
 	my $logger = get_logger();
 	if (!defined($dbh)) {
@@ -43,6 +45,7 @@ sub beginWork {
 	return 1;
 }
 
+# commit transaction in database
 sub commit {
 	my $logger = get_logger();
 	if (!defined($dbh)) {
@@ -53,6 +56,7 @@ sub commit {
 	return 1;
 }
 
+# roll back transaction in database
 sub rollback {
 	my $logger = get_logger();
 	if (!defined($dbh)) {
@@ -125,10 +129,11 @@ sub readFromDBHash {
 	return 1;
 }
 
-# do statement $doString in database using optional parameters passed in array ref $parameters, optionally passing back values in $data
+# do general statement $DB->{doString} in database using optional parameters passed in array ref $DB->{parameters}, optionally passing back values in $data
 sub doInDB {
-	my ($doString, $data, $parameters) = @_;
-	my @parameters = @$parameters;
+	my ($DB, $data) = @_;
+	my $doString = $DB->{doString};
+	my @parameters = @{$DB->{parameters}};
 	
 	my $logger = get_logger();
 	if (!defined($dbh)) {
@@ -157,6 +162,7 @@ sub doInDB {
 	return 1;
 }
 
+# store row-based data into database, using insert or an "upsert" technique
 sub storeInDB {
 	my ($DB, $data) = @_;
 	my $tableName = $DB->{tablename};
@@ -273,7 +279,7 @@ sub storeInDB {
 					if ($dataArray[$tgtCol] =~ /^(\d{2})[.\/](\d{2})[.\/](\d{2})/) {
 						my $prefix = "20";
 						$prefix = "19" if $3 > $DB->{cutoffYr2000};
-						$errorIndicator = "Konvertiere 2-Ziffern jahr:".$3." in 4-Ziffern jahr mit Beginin $prefix ; Cutoff = ".$DB->{cutoffYr2000};
+						$errorIndicator = "converting 2-digit year:".$3." into 4-digit year, prefix $prefix ; cutoff = ".$DB->{cutoffYr2000};
 						$severity = 0 if !$severity;
 						$dataArray[$tgtCol] =~ s/^(\d{2})[.\/](\d{2})[.\/](\d{2})/$prefix$3-$2-$1 00:00:00/;
 					}
@@ -289,7 +295,7 @@ sub storeInDB {
 						$severity = 1 if !$severity;
 					}
 					if ($dataArray[$tgtCol] && $dataArray[$tgtCol] !~ /^\d{4}\-\d{2}\-\d{2} \d{2}:\d{2}:\d{2}$/ && $dataArray[$tgtCol] !~ /^\d{4}\-\d{2}\-\d{2}$/) {
-						$errorIndicator .= "| korrektes datumsformat (\d{4}\-\d{2}\-\d{2} \d{2}:\d{2}:\d{2} oder \d{4}\-\d{2}\-\d{2}) konnte für: ".$dataArray[$tgtCol].", Feld: ".$columns[$dbCol]." nicht erzeugt werden!";
+						$errorIndicator .= "| correct dateformat (\d{4}\-\d{2}\-\d{2} \d{2}:\d{2}:\d{2} oder \d{4}\-\d{2}\-\d{2}) couldn't be created for: ".$dataArray[$tgtCol].", field: ".$columns[$dbCol];
 						$dataArray[$tgtCol] = undef;
 						$severity = 1 if !$severity;
 					}
@@ -297,7 +303,7 @@ sub storeInDB {
 				# everything else interpreted as string
 				} else {
 					if (length($dataArray[$tgtCol]) > $datasize) {
-						$errorIndicator .= "| Inhalt '".$dataArray[$tgtCol]."' zu lang für Feld: ".$columns[$dbCol]." (Typ $datatype) in Zeile $i (0-basiert), Länge: ".length($dataArray[$tgtCol]).", definierte Feldgröße: ".$datasize;
+						$errorIndicator .= "| content '".$dataArray[$tgtCol]."'too long for field: ".$columns[$dbCol]." (type $datatype) in row $i (0-based), length: ".length($dataArray[$tgtCol]).", defined fieldsize: ".$datasize;
 						$severity = 2;
 					}
 					$dataArray[$tgtCol] =~ s/'/''/g; # quote quotes
@@ -332,12 +338,12 @@ sub storeInDB {
 				$logger->info("deleting data from $schemaName.$tableName, criteria: $deleteBeforeInsertSelector");
 				my $dostring = "delete from $schemaName.$tableName WHERE $deleteBeforeInsertSelector";
 				$dbh->do($dostring) or do {
-					$logger->error($DBI::errstr." bei $dostring ".$debugKeyIndicator);
+					$logger->error($DBI::errstr." with $dostring ".$debugKeyIndicator);
 					return 0;
 				};
 				# mark deleteBeforeInsertSelector as executed for these data
 				$beforeInsert{$deleteBeforeInsertSelector} = 1;
-				$logger->info("enter data into $schemaName.$tableName");
+				$logger->info("entering data into $schemaName.$tableName");
 			}
 			if ($logger->is_trace) {
 				$logger->trace("data to be inserted:");
@@ -413,6 +419,7 @@ sub storeInDB {
 	return !$DBerrHappened;
 }
 
+# delete data identified by key-data in database
 sub deleteFromDB {
 	my ($DB,$data) = @_;
 	my $tableName = $DB->{tablename};
@@ -442,6 +449,7 @@ sub deleteFromDB {
 	return 1;
 }
 
+# update data in database
 sub updateInDB {
 	my ($DB,$data) = @_;
 	my $tableName = $DB->{tablename};
@@ -488,7 +496,7 @@ sub updateInDB {
 					my $datatype = $coldefs->{$columns[$j]}{"TYPE_NAME"}."(".$coldefs->{$columns[$j]}{"COLUMN_SIZE"}.")";
 					$errRec.= $columns[$j]."[".$datatype."]:".$dataArray[$j].", ";
 				}
-				$logger->error($DBI::errstr.", bei Datensatz: $errRec");
+				$logger->error($DBI::errstr." with record: $errRec");
 				return 0;
 			}
 		}
@@ -508,121 +516,114 @@ ETL::Wrap::DB - Database wrapper functions (for DBI / DBD::ODBC)
 
 =head1 SYNOPSIS
 
- newDBH ($server, $database, $trusted)
+ newDBH ($DB,$execute,$user,$pwd)
  beginWork ()
  commit ()
  rollback ()
- readFromDB ($select)
- readFromDBHash ( $select, $keyfield)
- doInDB ( $doString, $retvals, @parameters)
- storeInDB ( $dbh, $tableName, $addID, $upsert, $primkey, 
- deleteFromDB ($data, $tableName, $keycol)
- updateInDB ($data, $tableName, $keycol)
+ readFromDB ($DB, $data)
+ readFromDBHash ($DB, $data)
+ doInDB ($DB, $data)
+ storeInDB ($DB, $data)
+ deleteFromDB ($DB, $data)
+ updateInDB ($DB, $data)
 
 =head1 DESCRIPTION
 
-=item newDBH: erzeuge DBI Handle für Datenbankverbindung
+=item newDBH: create a new handle for a database connection
 
- $server.. Datenbankserver
- $database .. Datenbank
- $trusted .. soll trusted connection Verbindungszeichenfolge verwendet werden (Datenbankverbindung mit aktuell eingeloggten user)?
- $longreadlen .. buffergrösse für Allokation großer Felder (siehe docstore.mik.ua/orelly/linux/dbi/ch06_01.htm)
- Rückgabe: DBI Handle zur weiteren Verwendung
+ $DB .. hash with connection information like server, database
+ $execute .. additional hash with execution information, mainly used for interpolation in DSN, especially environment: 'driver={SQL Server};Server=$DB->{server}{$execute->{env}};...'
+ $user, $pwd .. if required, user and password for DB connection can be given here (interpolated in DSN like '...;uid=$user;pwd=$pwd;').
+ returns 0 on error, 1 if OK (handle is stored internally for further usage)
 
-=item beginWork: Datenbank Transaktionsbeginn
+=item beginWork: start transaction in database
 
- $dbh .. DBI Handle für Transaktionsbeginn
- Rückgabe: 0 Bei Fehler, 1 wenn OK
+ returns 0 on error, 1 if OK
 
-=item commit: Datenbank Transaktionscommit
+=item commit: commit transaction in database
 
- $dbh .. DBI Handle für Transaktionscommit
- Rückgabe: 0 Bei Fehler, 1 wenn OK
+ returns 0 on error, 1 if OK
 
+=item rollback: roll back transaction in database
 
-=item rollback: Datenbank Transaktionsrollback
+ returns 0 on error, 1 if OK
 
- $dbh .. DBI Handle für Transaktionsrollback
- Rückgabe: 0 Bei Fehler, 1 wenn OK
+=item readFromDB: read data into array returned in $data
 
+ $DB .. hash with information for the procedure
+ $data .. ref to array of hash values (as returned by fetchall_arrayref: $return[row_0based]->{"<fieldname>"}) for return values of query.
+ $DB->{query} .. query string
+ $DB->{columnnames} .. optionally return fieldnames of the query here
+ returns 0 on error, 1 if OK
 
-=item readFromDB: Dateneinholung aus Datenbank
+=item readFromDBHash : read data into hash using column $DB->{keyfield} as the unique key for the hash (used for lookups), returned in $data
 
- $dbh .. DBI Handle für Dateneinholung
- $select .. Abfragestring
- $columnnames .. optional Rückgabe der Feldnamen der Abfrage
- Rückgabe: ref auf array von hashwerten (wie von fetchall_arrayref zurückgegeben, also $return[zeilennummer, 0basiert]->{"<Feldname>"}). Bei Fehler Rückgabe von 0
+ $DB .. hash with information for the procedure
+ $data .. ref to hash of hash values (as returned by selectall_hashref: $return->{hashkey}->{"<fieldname>"}) for return values of query.
+ $DB->{query} .. query string
+ $DB->{keyfield} .. field contained in the query string that should be used as the hashkey for the hash values of $data.
+ returns 0 on error, 1 if OK
 
-=item readFromDBHash : Dateneinholung aus Datenbank
+=item doInDB: do general statement $DB->{doString} in database using optional parameters passed in array ref $DB->{parameters}, optionally passing back values in $data
 
- $dbh .. DBI Handle für Dateneinholung
- $select .. Abfragestring
- $keyfield .. Feld, das im Abfragestring vorkommt, das für den hashkey der hashwerte verwendet werden soll.
- Rückgabe: ref auf hash von hashwerten (wie von selectall_hashref zurückgegeben, also $return->{hashkey}->{"<Feldname>"}). Bei Fehler Rückgabe von 0
+ $DB .. hash with information for the procedure
+ $data .. optional: ref to array for return values of statement in $DB->{doString} (usually stored procedure).
+ $DB->{doString} .. sql statement to be executed
+ $DB->{parameters} .. optional: if there are placeholders defined in $DB->{doString} for parameters (?), then the values for these parameters are passed here.
+ returns 0 on error, 1 if OK
 
-=item doInDB: Allgemeine Ausführung eines SQL Statements in der Datenbank
+=item storeInDB: store row-based data into database, using insert or an "upsert" technique
 
- $dbh .. DBI Handle für Ausführung des SQL Statements
- $doString .. sql statement, das ausgeführt werden soll
- $retvals .. optional: Ref auf Array, das die Rückgabe(n) des $doStrings (üblicherweise stored proc) beinhalten wird.
- @parameters .. optional: wenn in $doString Platzhalter für parameter (?) enthalten sind, dann werden die parameter ab hier übergeben.
- Beispiel: DButil::doInDB($dbh,"sp_helpdb ?",\@retvals,"InfoDB"); oder DButil::doInDB($dbh,"sp_helpdb ?","","InfoDB") wenn Rückgabewerte nicht wichtig sind.
- Rückgabe: 0 Bei Fehler, 1 wenn OK
-
-=item storeInDB: Datenablage in die Datenbank (insert oder "upsert")
-
- $data .. ref auf array von hashes, das in der Datenbank abgelegt werden soll:
+ $DB .. hash with information for the procedure
+ $data .. ref to array of hashes to be stored into database:
  $data = [
            {
-             'Feld1Name' => 'DS1Feld1Wert',
-             'Feld2Name' => 'DS1Feld2Wert',
+             'field1Name' => 'DS1field1Value',
+             'field2Name' => 'DS1field2Value',
              ...
            },
            {
-             'Feld1Name' => 'DS2Feld1Wert',
-             'Feld2Name' => 'DS2Feld2Wert',
+             'field1Name' => 'DS2field1Value',
+             'field2Name' => 'DS2field2Value',
              ...
            },
          ];
- $dbh .. DBI Handle für Datenablage
- $tableName .. Tabelle, in der die Daten eingefügt werden sollen (kann auch ein vorangestelltes schema (mit "." getrennt) haben)
- $addID .. zusätzliches, konstantes ID-feld zu den daten geben (ref auf hash: {"NameOfIDField" => "valueOfIDField"}), nur eine ID möglich
- $upsert .. Datensatz aktualisieren, nachdem ein insert wegen bereits existentem primärschlüssel gescheitert ist (-> "upsert")
- $primkey .. WHERE Klausel (z.b. primID1 = ? AND primID2 = ?) zum Aufbau des update statements
- $ignoreDuplicateErrs .. Wenn $upsert nicht gesetzt wurde und duplikatsfehler bei insert ignoriert werden sollen
- $deleteBeforeInsertSelector .. WHERE Klausel (z.b. col1 = ? AND col2 = ?) zum Löschen existierender Daten vor der Ablage: Alle Daten, bei denen die Klausel für Werte im ersten Datensatz der abzulegenden Daten erfüllt ist,  werden gelöscht (Annahme, dass diese Werte für alle Datensätze gleich sind)
- $incrementalStore .. wenn gesetzt, werden undefinierte (NICHT Leer ("" !), sondern undef) Datenwerte NICHT auf NULL aktualisiert sondern beim insert/update statement übergangen
- $doUpdateBeforeInsert .. wenn gesetzt, dann wird bei upserts das update VOR dem Insert gemacht, das ist besonders bei Tabellen mit Identity Keys, wo das Kriterium auf einen anderen Schlüssel abstellt wichtig.
- $debugKeyIndicator .. Key Debug String (z.b. Key1 = ? Key2 = ?) zum Aufbau eines schlüsselhinweises bei Fehlermeldungen.
- Rückgabe: 0 Bei Fehler, 1 wenn OK
+ $DB->{tableName} .. table where data should be inserted/updated (can have a prepended schema, separated with ".")
+ $DB->{addID} .. add an additional, constant ID-field to the data (ref to hash: {"NameOfIDField" => "valueOfIDField"}), only one field/value pair is possible here
+ $DB->{upsert} .. update a record after an insert failed due to an already existing primary key (-> "upsert")
+ $DB->{primkey} .. WHERE clause (e.g. primID1 = ? AND primID2 = ?) for building the update statements
+ $DB->{ignoreDuplicateErrs} .. if  $DB->{upsert} was not set and duplicate errors with inserts should be ignored
+ $DB->{deleteBeforeInsertSelector} .. WHERE clause (e.g. col1 = ? AND col2 = ?) for deleting existing data before storing: all data that fullfills the criteria of this clause for values in the first data record of the data to be stored are being deleted (following the assumption that these criteria are the fulfilled for all records to be deleted)
+ $DB->{incrementalStore} .. if set, then undefined (NOT empty ("" !) but undef) values are not being set to NULL but skipped for the insert/update statement
+ $DB->{doUpdateBeforeInsert} .. if set, then the update in "upserts" is done BEFORE the insert, this is important for tables with an identity primary key and the inserting criterion is a/are different field(s).
+ $DB->{debugKeyIndicator} .. key debug string (e.g. Key1 = ? Key2 = ?) to build debugging key information for error messages.
+ returns 0 on error, 1 if OK
 
-=item deleteFromDB: Daten in der Datenbank löschen
+=item deleteFromDB: delete data identified by key-data in database
 
- $data.. ref auf hash von hasheinträgen (wie z.b. von selectall_hashref erhalten) mit schlüsselwerten von Datensätzen, die zu löschen sind
- $dbh .. DBI Handle für Datenlöschung
- $tableName .. Tabelle, in der die Daten gelöscht werden sollen
- $keycol .. Feldname bzw. WHERE Klausel (z.b. primID1 = ? AND primID2 = ?) um Daten, die gelöscht werden sollen, ausfindig zu machen. Ein "?" spezifiziert eine WHERE Klausel (wird nicht weiter ergänzt)
- Rückgabe: 0 Bei Fehler, 1 wenn OK
+ $DB .. hash with information for the procedure
+ $data.. ref to hash of hash entries (as returned by selectall_hashref) having key values of records to be deleted
+ $DB->{tableName} .. table where data should be deleted
+ $DB->{keycol} .. a field name or a WHERE clause (e.g. primID1 = ? AND primID2 = ?) to find data that should be removed. A contained "?" specifies a WHERE clause that is simply used for a prepared statement.
+ returns 0 on error, 1 if OK
 
-=item updateInDB: Aktualisiere Daten in der Datenbank
+=item updateInDB:  update data in database
 
- $data.. ref auf hash von hasheinträgen (wie z.b. von selectall_hashref erhalten) mit schlüsselwerten von Datensätzen, die zu aktualisieren sind (keyval werte sind künstliche Schlüssel, die nicht für die Aktualisierung verwendet werden, sondern nur die Datensätze identifizieren)
- $data = { 'keyval1' =>
-           {
-             'Feld1Name' => 'DS1Feld1Wert',
-             'Feld2Name' => 'DS1Feld2Wert',
+ $DB .. hash with information for the procedure
+ $data.. ref to hash of hash entries (as returned by selectall_hashref) having key values of records to be updated (keyval keys are artificial keys not being used for the update, they only uniquely identify the update records)
+ $data = [ 'keyval1' => {
+             'field1Name' => 'DS1field1Value',
+             'field2Name' => 'DS1field2Value',
+             ...
+           }, 'keyval2' => {
+             'field1Name' => 'DS2field1Value',
+             'field2Name' => 'DS2field2Value',
              ...
            },
-           'keyval2' => {
-             'Feld1Name' => 'DS2Feld1Wert',
-             'Feld2Name' => 'DS2Feld2Wert',
-             ...
-           },
-         };
- $dbh .. DBI Handle für Datenaktualisierung
- $tableName .. Tabelle, in der die Daten aktualisiert werden sollen
- $keycol .. Feldname bzw. WHERE Klausel (z.b. primID1 = ? AND primID2 = ?) um Daten, die aktualisiert werden sollen, ausfindig zu machen. Ein "?" spezifiziert eine WHERE Klausel (wird nicht weiter ergänzt)
- Rückgabe: 0 Bei Fehler, 1 wenn OK
+         ];
+ $DB->{tableName} .. table where data should be updated
+ $DB->{keycol} .. a field name or a WHERE clause (e.g. primID1 = ? AND primID2 = ?) to find data that should be updated. A contained "?" specifies a WHERE clause that is simply used for a prepared statement.
+ returns 0 on error, 1 if OK
 
 =head1 COPYRIGHT
 
