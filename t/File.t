@@ -1,6 +1,6 @@
 use strict; use warnings; use Log::Log4perl qw(get_logger); use Log::Log4perl::Level; use Test::More; use Data::Dumper;
-use Test::More tests => 12; use Test::Files; use File::Spec;
-use ETL::Wrap::File; use ETL::Wrap::Common;
+use ETL::Wrap::File; use Test::Files; use File::Spec;
+use Test::More tests => 12; 
 
 Log::Log4perl::init("testlog.config");
 my $logger = get_logger();

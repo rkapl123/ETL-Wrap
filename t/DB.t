@@ -1,7 +1,8 @@
 # calling user (because of TrustedConnection with newDBH) should be dbo in the pubs database, as tables are created/dropped
 use strict; use warnings; use Log::Log4perl qw(get_logger); use Log::Log4perl::Level; use Test::More; use Data::Dumper;
+use ETL::Wrap::DB;
+use Test::More tests => 12;
 
-use ETL::Wrap::DB; use ETL::Wrap::Common;
 Log::Log4perl::init("testlog.config");
 my $logger = get_logger();
 
@@ -78,5 +79,5 @@ ETL::Wrap::DB::doInDB("sp_helpdb ?","","InfoDB");
 # readFromDBHash
 # deleteFromDB
 # 
-# Roundtrip test: Daten schreiben und wieder auslesen, Vergleich ob gleich
+# Roundtrip test: write data adn read back again, compare
 done_testing();

@@ -61,14 +61,16 @@ sub readConfigFile {
 
 # set up ETL configuration
 sub setupETLWrap {
-	ETL::Wrap::Common::getOptions();
-	ETL::Wrap::Common::setupConfigMerge();
+	ETL::Wrap::Common::getOptions(); # first get overriding command line options
+	ETL::Wrap::Common::setupConfigMerge(); # %config (from site.config, amended with command line options) and %common (from process script) are merged into %common and all @loads
 	ETL::Wrap::Common::setupLogging(\%common);
-	# starting log entry: scriptname + parameters, first remove sensitive information.
-	$Data::Dumper::Indent = 0;
-	my $configdump = Dumper(\%common); $configdump =~ s/\s+//g;$configdump =~ s/\$VAR1=//;$configdump =~ s/'/,/g;
-	get_logger()->info("======> started ".$execute{scriptname}.", parameters: ".$configdump);
+	# starting log entry: process script name + %common parameters, used for process monitoring (%config is not written due to sensitive information)
+	$Data::Dumper::Indent = 0; # temporarily flatten dumper output for single line
+	my $configdump = Dumper(\%common); 
 	$Data::Dumper::Indent = 2;
+	$configdump =~ s/\s+//g;$configdump =~ s/\$VAR1=//;$configdump =~ s/,'/,/g;$configdump =~ s/{'/{/g;$configdump =~ s/'=>/=>/g; # compress information
+	get_logger()->info("==========================================================");
+	get_logger()->info("started ".$execute{scriptname}.", parameters: ".$configdump);
 	ETL::Wrap::Common::setupStarting(\%common);
 	ETL::Wrap::Common::checkHash(\%config,"config");
 	ETL::Wrap::Common::checkHash(\%common,"common");
@@ -673,9 +675,10 @@ ETL::Wrap - Package wrapping tasks for ETL
 
 =head1 SYNOPSIS
 
- %config .. hash for global config (set in site.config and additional folder)
- %common .. common configs for loads
- @loads .. array of hash of hashes defining loads
+ %config .. hash for global config (set in $ENV{ETL_WRAP_CONFIG_PATH}/site.config, amended with $ENV{ETL_WRAP_CONFIG_PATH}/additional/*.config)
+ %common .. common load configs for the process script
+ @loads .. list of hashes defining specific load processes
+ %execute .. hash of parameters for current process (having one or multiple loads)
 
 =head1 DESCRIPTION
 
@@ -702,7 +705,7 @@ ETL::Wrap - Package wrapping tasks for ETL
 
 =head1 COPYRIGHT
 
-Copyright (c) 2022 Roland Kapl
+Copyright (c) 2023 Roland Kapl
 
 All rights reserved.  This program is free software; you can
 redistribute it and/or modify it under the same terms as Perl itself.

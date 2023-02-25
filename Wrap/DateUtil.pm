@@ -618,7 +618,7 @@ ETL::Wrap::DateUtil - Date and Time helper functions
 
 =head1 COPYRIGHT
 
-Copyright (c) 2022 Roland Kapl
+Copyright (c) 2023 Roland Kapl
 
 All rights reserved.  This program is free software; you can
 redistribute it and/or modify it under the same terms as Perl itself.

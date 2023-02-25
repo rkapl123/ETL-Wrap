@@ -20,10 +20,10 @@ my @coreConfig = ("DB","File","FTP","process");
 my @extConfig = (@coreConfig,"config");
 my %hashCheck = (
 	common => {
-		process => {},
 		DB => {},
-		FTP => {},
 		File => {},
+		FTP => {},
+		process => {},
 	},
 	config => {
 		checkLookup => {test => {errmailaddress => "",errmailsubject => "",timeToCheck =>, freqToCheck => "", logFileToCheck => "", logcheck => "",logRootPath =>""},},
@@ -38,10 +38,10 @@ my %hashCheck = (
 		smtpAuth => {user => '', pwd => ''},
 		smtpTimeout => 60,
 		testerrmailaddress => '',
-		process => {},
 		DB => {},
-		FTP => {},
 		File => {},
+		FTP => {},
+		process => {},
 	},
 	execute=> {
 		additionalLookupData => {},
@@ -76,28 +76,12 @@ my %hashCheck = (
 		scriptname => "",
 		timeToCheck => "", # for logchecker: scheduled time of job (don't look earlier for log entries)
 	},
-	process => {
-		cutOffExt => "",
-		data => [], # loaded data: array (rows) of hash refs (columns)
-		hadDBErrors => 1,
-		historyFolder => "",
-		ignoreNoTest => 0,
-		logFolder => "",
-		logRootPath => "",
-		plannedUntil => "2359",
-		postDumpProcessing => "", # 
-		postReadProcessing => "",
-		redoDir => "", # folder where files for redo are contained
-		redoFile => 1, # flag for specifying a redo
-		retrySecondsErr => 1,
-		retrySecondsPlanned => 300,
-		skipHolidays => 0,
-		skipHolidaysDefault => "AT",
-		skipWeekends => 0,
-		skipForFirstBusinessDate => 0,
-		subtypeconf => "",
-		typeconf => "",
-	},
+	load => {
+		DB => {}, # DB specific configs
+		File => {}, # File specific configs
+		FTP => {}, # FTP specific configs
+		process => {}, # general processing configs
+	}
 	DB => {
 		addID => {},
 		additionalLookup => "",
@@ -129,37 +113,6 @@ my %hashCheck = (
 		useKeyForDeleteBeforeInsert => 1,
 		updateIfInsertFails => 1,
 		db => {user => "", pwd => ""},
-	},
-	FTP => {
-		archiveFolder => "", # folder for archived files on the FTP server
-		dontMoveTempImmediately => 1, # if 0 oder missing: rename/move files immediately after writing to FTP to the final name, otherwise (1) a call to moveTempFiles is required to do that
-		dontDoSetStat => 1, # no setting of time stamp of remote file to that of local file (avoid error messages of FTP Server if it doesn't support this)
-		dontDoUtime => 1, # don't set time stamp of local file to that of remote file
-		dontUseQuoteSystemForPwd => 0,
-		dontUseTempFile => 1, # directly upload files, without temp files
-		fileToArchive => 1,
-		fileToRemove => 1,
-		FTPdebugLevel => 0, # debug ftp: 0 or ~(1|2|4|8|16|1024|2048), loglevel automatically set to debug for module FTP
-		hostkey => "",
-		localDir => "",
-		maxConnectionTries => 5,
-		onlyArchive => 0,
-		onlyDoFiletransferToLocalDir => 1,
-		path => "", # relative FTP path (under remoteDir), where the file is to be found
-		plinkInstallationPath => "",
-		port => 22, # ftp/sftp port (leer lassen für default ports 21 (ftp) oder 22 (sftp)...): 5022
-		prefix => "ftp", # key for pwd and user in config{FTP}
-		privKey => "", # sftp key file location
-		queue_size => 1,
-		removeFiles => {removeFolders => [], day=>, mon=>, year=>1},
-		remoteDir => "", # remote root folder for up-/download: "out/Marktdaten/", path is added then for each filename (load)
-		remoteFiles => {},
-		remoteHost => {Prod => "", Test => ""}, # ref to hash of IP-addresses/DNS of host(s).
-		remove => {removeFolders => ["",""], day=>, mon=>, year=>1}, # for removing archived files on FTP hosts, removeFolders are the folders to be cleaned, day/mon/year is the days/months/years cutoff age for the removed files
-		simulate => 0, # only simulate (1) or do actually (0)?
-		type => "", # (A)scii or (B)inary
-		user => "", # set user directly
-		ftpPre => {user => "", pwd => ""}, # set user/pwd for prefix ftpPre
 	},
 	File => {
 		addtlProcessingTrigger => "",
@@ -202,15 +155,62 @@ my %hashCheck = (
 		localFilesystemPath => "",
 		optional => 1,
 	},
-	load => {
-		process => {}, # general processing configs
-		DB => {}, # DB specific configs
-		FTP => {}, # FTP specific configs
-		File => {}, # File specific configs
-	}
+	FTP => {
+		archiveFolder => "", # folder for archived files on the FTP server
+		dontMoveTempImmediately => 1, # if 0 oder missing: rename/move files immediately after writing to FTP to the final name, otherwise (1) a call to moveTempFiles is required to do that
+		dontDoSetStat => 1, # no setting of time stamp of remote file to that of local file (avoid error messages of FTP Server if it doesn't support this)
+		dontDoUtime => 1, # don't set time stamp of local file to that of remote file
+		dontUseQuoteSystemForPwd => 0,
+		dontUseTempFile => 1, # directly upload files, without temp files
+		fileToArchive => 1,
+		fileToRemove => 1,
+		FTPdebugLevel => 0, # debug ftp: 0 or ~(1|2|4|8|16|1024|2048), loglevel automatically set to debug for module FTP
+		hostkey => "",
+		localDir => "",
+		maxConnectionTries => 5,
+		onlyArchive => 0,
+		onlyDoFiletransferToLocalDir => 1,
+		path => "", # relative FTP path (under remoteDir), where the file is to be found
+		plinkInstallationPath => "",
+		port => 22, # ftp/sftp port (leer lassen für default ports 21 (ftp) oder 22 (sftp)...): 5022
+		prefix => "ftp", # key for pwd and user in config{FTP}
+		privKey => "", # sftp key file location
+		queue_size => 1,
+		removeFiles => {removeFolders => [], day=>, mon=>, year=>1},
+		remoteDir => "", # remote root folder for up-/download: "out/Marktdaten/", path is added then for each filename (load)
+		remoteFiles => {},
+		remoteHost => {Prod => "", Test => ""}, # ref to hash of IP-addresses/DNS of host(s).
+		remove => {removeFolders => ["",""], day=>, mon=>, year=>1}, # for removing archived files on FTP hosts, removeFolders are the folders to be cleaned, day/mon/year is the days/months/years cutoff age for the removed files
+		simulate => 0, # only simulate (1) or do actually (0)?
+		type => "", # (A)scii or (B)inary
+		user => "", # set user directly
+		ftpPre => {user => "", pwd => ""}, # set user/pwd for prefix ftpPre
+	},
+	process => {
+		cutOffExt => "",
+		data => [], # loaded data: array (rows) of hash refs (columns)
+		hadDBErrors => 1,
+		historyFolder => "",
+		ignoreNoTest => 0,
+		logFolder => "",
+		logRootPath => "",
+		plannedUntil => "2359",
+		postDumpProcessing => "", # 
+		postReadProcessing => "",
+		redoDir => "", # folder where files for redo are contained
+		redoFile => 1, # flag for specifying a redo
+		retrySecondsErr => 1,
+		retrySecondsPlanned => 300,
+		skipHolidays => 0,
+		skipHolidaysDefault => "AT",
+		skipWeekends => 0,
+		skipForFirstBusinessDate => 0,
+		subtypeconf => "",
+		typeconf => "",
+	},
 );
 
-# extract config hashes (DB,FTP,File,process) from $arg hash and return as list of hashes. Required config hashes are given in string list @required
+# extract config hashes (DB,FTP,File,process) from $arg hash and return as list of hashes. The config hashes to be extracted are given in string list @required and returned in @ret
 sub extractConfigs {
 	my $logger = get_logger();
 	my ($arg,@required) = @_;
@@ -218,7 +218,7 @@ sub extractConfigs {
 	if (ref($arg) eq "HASH") {
 		for my $req (@required) {
 			push(@ret, \%{$arg->{$req}});
-			checkHash($ret[$#ret],$req);
+			checkHash($ret[$#ret],$req); # check last added hash after adding it...
 		}
 	} else {
 		my $errStr = "no ref to hash passed when calling ".(caller(1))[3].", line ".(caller(1))[2]." in ".(caller(1))[1];
@@ -228,7 +228,7 @@ sub extractConfigs {
 	return @ret;
 }
 
-# check config hash for validity against hashCheck (valid key entries are there + their valid value types (examples))
+# check config hash passed in $hash for validity against hashCheck (valid key entries are there + their valid value types (examples))
 sub checkHash {
 	my $logger = get_logger();
 	my ($hash, $hashName) = @_;
@@ -348,7 +348,13 @@ sub setupStarting {
 	}
 }
 
-# setupConfigMerge creates cascading inheritance of DB/File/FTP settings: %config -> %common -> $loads[] <- options from command line (latter takes more precedence)
+# setupConfigMerge creates cascading inheritance of config/DB/File/FTP/process settings: 
+# %config <-(merged into)- config options from command line
+# -(merged into)->
+# %common (common task parameters defined in script)
+# -(merged into)->
+# $loads[] <-(merged into)- DB, FTP, File and process options from command line 
+# lower means more precedence (overriding previously set parameters)
 sub setupConfigMerge {
 	for (@coreConfig) {
 		# fill missing keys in order to avoid Can't use an undefined value as a HASH reference errors in hash config merging later
@@ -401,7 +407,7 @@ sub getOptions() {
 	}
 }
 
-# this is used for ETL::Wrap::processingEnd to notify of successful retry after failure
+# used in ETL::Wrap::processingEnd to notify of successful retry after failure
 sub sendSuccessMail {
 	my $filename = shift;
 	my $logger = get_logger();
@@ -409,7 +415,7 @@ sub sendSuccessMail {
 	'Successful retry of '.$execute{scriptname}.' !'.($execute{envraw} ? '('.$execute{envraw}.')' : ""),'TEXT',$filename.' was succesfully done on retry.');
 }
 
-# general mail sending for notifying of conditions/sending reports (in user specific code)
+# general mail sending for notifying of conditions/sending reports (for use in user specific code)
 sub sendGeneralMail {
 	my ($From, $To, $Cc, $Bcc, $Subject, $Type, $Data, $Encoding, $AttachType, $AttachFile) = @_;
 	my $logger = get_logger();
@@ -462,9 +468,9 @@ ETL::Wrap::Common - Common parts for the ETL::Wrap package
 
 =head1 SYNOPSIS
 
- %common .. common load configs set process script
- %config .. hash for global config (typically set in site.config)
- @loads .. list of hashes defining load processes
+ %config .. hash for global config (set in $ENV{ETL_WRAP_CONFIG_PATH}/site.config, amended with $ENV{ETL_WRAP_CONFIG_PATH}/additional/*.config)
+ %common .. common load configs for the process script
+ @loads .. list of hashes defining specific load processes
  %execute .. hash of parameters for current process (having one or multiple loads)
 
  getLogFPathForMail
@@ -480,7 +486,7 @@ ETL::Wrap::Common - Common parts for the ETL::Wrap package
 
 =head1 DESCRIPTION
 
-=item getLogFPathForMail, getLogFPath, MailFilter: funktions that are used in the central log.config as coderef.
+=item getLogFPathForMail, getLogFPath, MailFilter: functions that are used in the central log.config as coderef.
 =item getLogFPathForMail: for custom conversion specifiers: path of logfiles resp logfiles of previous day (as file: hyperlink)
 =item getLogFPath: for file appender config, path of current logfile.
 =item MailFilter: for Mail appender config: used for filtering if mail should be sent? contains throttling "alreadySent" for mass errors
@@ -493,7 +499,7 @@ ETL::Wrap::Common - Common parts for the ETL::Wrap package
 =item setupStarting: setup starting conditions from process config information and exit if met
  $process .. config information
 
-=item setupConfigMerge: creates cascading inheritance of DB/File/FTP settings: %config -> %common -> $loads[] <- options from command line (latter takes more precedence)
+=item setupConfigMerge: creates cascading inheritance of config/DB/File/FTP/process settings
 =item getOptions: get options for overriding configured settings
 =item sendSuccessMail: send mail to configured errmailadress when a repeated processing is successful
  $filename .. file being processed successfully
@@ -524,7 +530,7 @@ ETL::Wrap::Common - Common parts for the ETL::Wrap package
 
 =head1 COPYRIGHT
 
-Copyright (c) 2022 Roland Kapl
+Copyright (c) 2023 Roland Kapl
 
 All rights reserved.  This program is free software; you can
 redistribute it and/or modify it under the same terms as Perl itself.

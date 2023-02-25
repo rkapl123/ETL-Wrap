@@ -13,8 +13,8 @@ BEGIN {
 our @ISA = qw(Exporter);
 our @EXPORT = qw(removeFilesOlderX fetchFiles writeFiles moveTempFiles archiveFiles login);
 
-my $ftp;
-my $RemoteHost;
+my $ftp; # module static SFTP handle, will be dynamic when using OO-Style here
+my $RemoteHost; # module static RemoteHost string, will be dynamic when using OO-Style here
 
 # remove all files in FTP server folders that are older than a given day/month/year
 sub removeFilesOlderX {
@@ -390,11 +390,11 @@ additionally following parameters from $FTP and $execute are important
 
 =item login: log in to FTP server, stores the handle of the ftp connection
 
- returns 1 if loging was successful, 0 on error
+ returns 1 if login was successful, 0 on error
 
 =head1 COPYRIGHT
 
-Copyright (c) 2022 Roland Kapl
+Copyright (c) 2023 Roland Kapl
 
 All rights reserved.  This program is free software; you can
 redistribute it and/or modify it under the same terms as Perl itself.

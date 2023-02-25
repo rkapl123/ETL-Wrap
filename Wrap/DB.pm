@@ -6,7 +6,7 @@ use DBI qw(:sql_types); use DBD::ODBC; use Data::Dumper; use Log::Log4perl qw(ge
 our @ISA = qw(Exporter);
 our @EXPORT = qw(newDBH beginWork commit rollback readFromDB readFromDBHash doInDB storeInDB deleteFromDB updateInDB);
 
-my $dbh; # module static handle, will be dynamic when using OO-Style here
+my $dbh; # module static DBI handle, will be dynamic when using OO-Style here
 my $DSN; # module static DSN string, will be dynamic when using OO-Style here
 
 # create a new handle for a database connection
@@ -627,7 +627,7 @@ ETL::Wrap::DB - Database wrapper functions (for DBI / DBD::ODBC)
 
 =head1 COPYRIGHT
 
-Copyright (c) 2022 Roland Kapl
+Copyright (c) 2023 Roland Kapl
 
 All rights reserved.  This program is free software; you can
 redistribute it and/or modify it under the same terms as Perl itself.
