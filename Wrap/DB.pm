@@ -69,8 +69,8 @@ sub rollback {
 
 # read data into array returned in $data
 sub readFromDB {
-	my ($DB, $data) = @_;
-	my $statement = $DB->{query};
+	my ($param, $data) = @_;
+	my $statement = $param->{query};
 	my $logger = get_logger();
 	if (!defined($dbh)) {
 		$logger->error("no valid dbh connection!");
@@ -86,7 +86,7 @@ sub readFromDB {
 	eval {
 		my $sth = $dbh->prepare($statement);
 		$sth->execute;
-		@{$DB->{columnnames}} = @{$sth->{NAME}}; # take field names from the statement handle of query
+		@{$param->{columnnames}} = @{$sth->{NAME}}; # take field names from the statement handle of query
 		$data = $sth->fetchall_arrayref({});
 	};
 	if ($@) {
@@ -98,10 +98,10 @@ sub readFromDB {
 	return 1;
 }
 
-# read data into hash using column $DB->{keyfield} as the unique key for the hash (used for lookups), returned in $data
+# read data into hash using column $param->{keyfield} as the unique key for the hash (used for lookups), returned in $data
 sub readFromDBHash {
-	my ($DB, $data) = @_;
-	my $statement = $DB->{query};
+	my ($param, $data) = @_;
+	my $statement = $param->{query};
 	my $logger = get_logger();
 	if (!defined($dbh)) {
 		$logger->error("no valid dbh connection!");
@@ -118,7 +118,7 @@ sub readFromDBHash {
 	eval {
 		my $sth = $dbh->prepare($statement);
 		$sth->execute;
-		$data = $sth->fetchall_hashref($DB->{keyfield});
+		$data = $sth->fetchall_hashref($param->{keyfield});
 	};
 	if ($@) {
 		$logger->error($@.",DB Fehler: ".$DBI::errstr." ausgeführtes statement: ".$statement);
@@ -129,11 +129,11 @@ sub readFromDBHash {
 	return 1;
 }
 
-# do general statement $DB->{doString} in database using optional parameters passed in array ref $DB->{parameters}, optionally passing back values in $data
+# do general statement $param->{doString} in database using optional parameters passed in array ref $param->{parameters}, optionally passing back values in $data
 sub doInDB {
-	my ($DB, $data) = @_;
-	my $doString = $DB->{doString};
-	my @parameters = @{$DB->{parameters}};
+	my ($param, $data) = @_;
+	my $doString = $param->{doString};
+	my @parameters = @{$param->{parameters}} if $param->{parameters};
 	
 	my $logger = get_logger();
 	if (!defined($dbh)) {
@@ -146,7 +146,7 @@ sub doInDB {
 	}
 	$logger->debug("do in DB: $doString, parameters: @parameters");
 	my $sth = $dbh->prepare($doString);
-	if (@parameters == 0) {
+	if (@parameters == 0) { #@parameters == undef or 
 		$sth->execute();
 	} else {
 		$sth->execute(@parameters);

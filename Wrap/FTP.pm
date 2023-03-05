@@ -114,7 +114,7 @@ sub getFiles {
 	return 1;
 }
 
-# upload files to FTP server
+# upload file to FTP server
 sub uploadFile {
 	my ($FTP,$param) = @_;
 	my $logger = get_logger();
@@ -122,7 +122,6 @@ sub uploadFile {
 		$logger->error("no file to upload (fileToWrite parameter) !");
 		return 0;
 	};
-	$logger->info("uploading file $localFile");
 	if (defined $ftp) {
 		my $doSetStat = ($FTP->{dontDoSetStat} ? 0 : 1);
 		$logger->debug("changing into folder [".$FTP->{remoteDir}."]");
@@ -163,6 +162,7 @@ sub uploadFile {
 		$logger->error("no ftp connection opened!");
 		return 0;
 	}
+	$logger->info("finished uploading file $localFile");
 	return 1;
 }
 

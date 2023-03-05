@@ -18,7 +18,7 @@ BEGIN {
 use ETL::Wrap::Common; use ETL::Wrap::DateUtil; use ETL::Wrap::DB; use ETL::Wrap::File; use ETL::Wrap::FTP;
 
 our @ISA = qw(Exporter);
-our @EXPORT = qw(%common %config %execute @loads setupETLWrap removeFilesinFolderOlderX openDBConn openFTPConn redoFile getLocalFiles getFilesFromFTP checkFiles extractArchives getAdditionalDBData readFileData dumpDataIntoDB markProcessed writeFileFromDB executeUploadCMD uploadFilesToFTP processingEnd retrySleepAbort moveFilesToHistory deleteFiles %months %monate get_curdate get_curdatetime get_curdate_dot formatDate formatDateFromYYYYMMDD get_curdate_dash get_curdate_gen get_curdate_dash_plus_X_years get_curtime get_curtime_HHMM get_lastdateYYYYMMDD get_lastdateDDMMYYYY is_first_day_of_month is_last_day_of_month get_last_day_of_month weekday is_weekend is_holiday first_week first_weekYYYYMMDD last_week last_weekYYYYMMDD convertDate convertDateFromMMM convertDateToMMM convertToDDMMYYYY addDays addDaysHol addMonths subtractDays subtractDaysHol convertcomma convertToThousendDecimal get_dateseries parseFromDDMMYYYY parseFromYYYYMMDD convertEpochToYYYYMMDD);
+our @EXPORT = qw(%common %config %execute @loads setupETLWrap removeFilesinFolderOlderX openDBConn openFTPConn redoFile getLocalFiles getFilesFromFTP checkFiles extractArchives getAdditionalDBData readFileData dumpDataIntoDB markProcessed writeFileFromDB executeUploadCMD uploadFileToFTP processingEnd processingPause retrySleepAbort moveFilesToHistory deleteFiles   get_logger   %months %monate get_curdate get_curdatetime get_curdate_dot formatDate formatDateFromYYYYMMDD get_curdate_dash get_curdate_gen get_curdate_dash_plus_X_years get_curtime get_curtime_HHMM get_lastdateYYYYMMDD get_lastdateDDMMYYYY is_first_day_of_month is_last_day_of_month get_last_day_of_month weekday is_weekend is_holiday first_week first_weekYYYYMMDD last_week last_weekYYYYMMDD convertDate convertDateFromMMM convertDateToMMM convertToDDMMYYYY addDays addDaysHol addMonths subtractDays subtractDaysHol convertcomma convertToThousendDecimal get_dateseries parseFromDDMMYYYY parseFromYYYYMMDD convertEpochToYYYYMMDD);
 
 # initialize module, reading all config files and setting basic execution variables
 sub INIT {
@@ -204,7 +204,7 @@ sub getLocalFiles {
 	}
 }
 
-# get file(s) from FTP into homedir and extract archives if needed
+# get file/s (can also be a glob for multiple files) from FTP into homedir and extract archives if needed
 sub getFilesFromFTP {
 	my $arg = shift;
 	my $logger = get_logger();
@@ -215,9 +215,9 @@ sub getFilesFromFTP {
 	} else {
 		$logger->logdie("\$FTP{onlyDoFiletransferToLocalDir} given, but no \$FTP{localDir} set !") if !$FTP->{localDir} && $FTP->{onlyDoFiletransferToLocalDir};
 		$logger->logdie("\$FTP{onlyArchive} given, but no \$FTP{ArchiveFolder} set !") if !$FTP->{ArchiveFolder} && $FTP->{onlyArchive};
-		@{$execute{retrievedFiles}} = (); # reset lost, but this is also necessary to create the retrievedFiles hash entry for passing back the list from getFiles
+		@{$execute{retrievedFiles}} = (); # reset last retrieved, but this is also necessary to create the retrievedFiles hash entry for passing back the list from getFiles
+		@{$execute{filenames}} = (); # also reset last collected
 		if ($File->{filename} && !$FTP->{onlyArchive}) {
-			$logger->info("fetching ".$File->{filename}." from FTP");
 			if (!ETL::Wrap::FTP::getFiles ($FTP,\%execute,{fileToRetrieve=>$File->{filename},fileToRetrieveOptional=>$File->{optional}})) {
 				$logger->error("error in fetching file from FTP") if !$execute{retryBecauseOfError};
 			} else {
@@ -258,7 +258,7 @@ sub checkFiles {
 		close CHECKFILE;
 	}
 	if ($fileDoesntExist) {
-		# exceptions from error message and return false for not continuing with readFile
+		# exceptions from error message and return false for not continuing with readFile/whatever
 		if ($File->{optional} || ($execute{firstRunSuccess} && $process->{plannedUntil}) || $process->{redoFile}) {
 			if ($execute{firstRunSuccess} && $process->{plannedUntil}) {
 				$logger->warn("file ".$File->{filename}." missing with planned execution until ".$process->{plannedUntil}." and first run successful, skipping");
@@ -276,7 +276,7 @@ sub checkFiles {
 	push @{$execute{filenames}}, @{$execute{retrievedFiles}} if $execute{retrievedFiles} && @{$execute{retrievedFiles}} > 0; # add the files retrieved with mget here.
 	push @{$execute{filesToRemove}}, @{$execute{filenames}} if $FTP->{fileToRemove};
 	push @{$execute{filesToArchive}}, @{$execute{filenames}} if $FTP->{fileToArchive};
-	# check, ob files or file globs exist when redoing
+	# check, whether files or file globs exist when redoing
 	if ($process->{redoFile}) {
 		my $redoGlob = $File->{filename} if $File->{filename} =~ /\*/;
 		for my $aRedoFile (@{$execute{filenames}}) {
@@ -369,7 +369,7 @@ sub dumpDataIntoDB {
 			# store data, tables are deleted unless explicitly marked
 			unless ($DB->{keepContent}) {
 				$logger->info("removing all data from Table $table ...");
-				ETL::Wrap::DB::doInDB("delete from $table");
+				ETL::Wrap::DB::doInDB({doString => "delete from $table"});
 			}
 			$logger->info("dumping data to table $table");
 			if (! ETL::Wrap::DB::storeInDB($DB, $process->{data})) {
@@ -377,12 +377,12 @@ sub dumpDataIntoDB {
 				$process->{hadDBErrors}=1;
 			}
 			# post processing (Perl code) for config, where postDumpProcessing is defined
-			if ($process->{postDumpProcessing}) {
+			if ($DB->{postDumpProcessing}) {
 				$logger->info("starting postDumpProcessing");
-				$logger->debug($process->{postDumpProcessing});
-				eval $process->{postDumpProcessing};
+				$logger->debug($DB->{postDumpProcessing});
+				eval $DB->{postDumpProcessing};
 				if ($@) {
-					$logger->error("error ($@) in eval postDumpProcessing: ".$process->{postDumpProcessing});
+					$logger->error("error ($@) in eval postDumpProcessing: ".$DB->{postDumpProcessing});
 					$process->{hadDBErrors} = 1;
 				}
 			}
@@ -403,7 +403,7 @@ sub dumpDataIntoDB {
 								# eval qq{"$exec"} doesn't evaluate $exec but the quoted string (to enforce interpolation where needed)
 								$exec = eval qq{"$exec"} if $exec =~ /$/; # only interpolate if perl scalars are contained
 								$logger->info("post execute: $exec");
-								if (!ETL::Wrap::DB::doInDB($exec)) {
+								if (!ETL::Wrap::DB::doInDB({doString => $exec})) {
 									$logger->error("error executing postDumpExec: '".$exec."' .. ");
 									$process->{hadDBErrors}=1;
 								}
@@ -448,8 +448,12 @@ sub markProcessed {
 	my $logger = get_logger();
 	my ($File,$process) = ETL::Wrap::Common::extractConfigs($arg,"File","process");
 	$logger->info("markProcessed");
+	# this is important for the archival/deletion on the FTP Server!
 	if ($File->{emptyOK} || !$process->{hadDBErrors}) {
-		$execute{filesProcessed}{$_} = 1 for @{$execute{filenames}};
+		for (@{$execute{filenames}}) {
+			$execute{filesProcessed}{$_} = 1;
+			$logger->info("filesProcessed: $_");
+		}
 	}
 	# mark to be removed or be moved to history
 	if ($File->{dontKeepHistory}) {
@@ -475,9 +479,9 @@ sub writeFileFromDB {
 	$File->{columns} = \@columnnames if !$File->{columns};
 	$logger->warn("no data retrieved") if (@{$process->{data}} == 0);
 	# prepare for all configs, where postReadProcessing is defined
-	if ($process->{postReadProcessing}) {
-		eval $process->{postReadProcessing};
-		$logger->error("error doing postReadProcessing: ".$process->{postReadProcessing}.": ".$@) if ($@);
+	if ($DB->{postReadProcessing}) {
+		eval $DB->{postReadProcessing};
+		$logger->error("error doing postReadProcessing: ".$DB->{postReadProcessing}.": ".$@) if ($@);
 	}
 	ETL::Wrap::Common::setErrSubject("creating/writing files");
 	$logger->error("error creating/writing file") if !ETL::Wrap::File::writeText($File,$process);
@@ -526,16 +530,14 @@ sub executeUploadCMD {
 }
 
 # upload files to FTP
-sub uploadFilesToFTP {
+sub uploadFileToFTP {
 	my $arg = shift;
 	my $logger = get_logger();
-	my ($FTP,$File,$process) = ETL::Wrap::Common::extractConfigs($arg,"FTP","File","process");
-	$logger->info("uploadFilesToFTP");
-	ETL::Wrap::Common::setErrSubject("Upload of files with FTP");
-	ETL::Wrap::FTP::writeFiles ({
-		filesToWrite => $execute{filesToWrite}
-	}) or do {
-		$logger->error("error uploading files with FTP...");
+	my ($FTP,$File) = ETL::Wrap::Common::extractConfigs($arg,"FTP","File");
+	$logger->info("uploadFileToFTP");
+	ETL::Wrap::Common::setErrSubject("Upload of file to FTP");
+	ETL::Wrap::FTP::uploadFile ($FTP,{fileToWrite => $File->{filename}}) or do {
+		$logger->error("error uploading file to FTP...");
 	};
 }
 
@@ -600,14 +602,30 @@ sub processingEnd {
 	retrySleepAbort($arg);
 }
 
-# general retry procedure for pausing processing
+# general procedure for pausing processing
+sub processingPause {
+	my $arg = shift;
+	my $logger = get_logger();
+	$logger->info("pause");
+	my $hrs = substr(ETL::Wrap::DateUtil::get_curtime_HHMM(),0,2);
+	my $min = substr(ETL::Wrap::DateUtil::get_curtime_HHMM(),2,2);
+	# Add time (60 module): 
+	# hour part: including carry of minutes after adding additional minutes ($arg/60); * 100 for shifting 2 digits left
+	# minute part: integer rest from 60 of (original + additional)
+	my $nextStartTimeNum = ($hrs + int(($min+($arg/60))/60))*100 + (($min + ($arg/60))%60);
+	$logger->info("pausing ".$arg." seconds, resume processing: ".sprintf("%04d",$nextStartTimeNum));
+	sleep $arg;
+}
+
+# general retry procedure for retrying/aborting processing
 sub retrySleepAbort {
 	my $arg = shift;
 	my $logger = get_logger();
 	my ($process) = ETL::Wrap::Common::extractConfigs($arg,"process");
+	$logger->info("retrySleepAbort");
 	# time triggered finishing of retry-processing, special case midnight
-	my $hrs = substr(get_curtime_HHMM(),0,2);
-	my $min = substr(get_curtime_HHMM(),2,2);
+	my $hrs = substr(ETL::Wrap::DateUtil::get_curtime_HHMM(),0,2);
+	my $min = substr(ETL::Wrap::DateUtil::get_curtime_HHMM(),2,2);
 	my $retrySeconds = $execute{retrySeconds};
 	$retrySeconds = $process->{retrySecondsErr} if !$retrySeconds;
 	# Add time (60 module): 
@@ -615,7 +633,7 @@ sub retrySleepAbort {
 	# minute part: integer rest from 60 of (original + additional)
 	my $nextStartTimeNum = ($hrs + int(($min+($retrySeconds/60))/60))*100 + (($min + ($retrySeconds/60))%60);
 	$execute{nextStartTime} = sprintf("%04d",$nextStartTimeNum);
-	my $currentTime = get_curtime_HHMM();
+	my $currentTime = ETL::Wrap::DateUtil::get_curtime_HHMM();
 	my $endTime = $process->{plannedUntil};
 	$endTime = "0000->not set" if !$endTime;
 	if ($currentTime >= $endTime or ($execute{nextStartTime} =~ /24../)) {
@@ -645,7 +663,7 @@ sub moveFilesToHistory {
 			$cutOffExt .= '_'.$redoExt;
 		}
 		if (!$execute{alreadyMovedOrDeleted}{$_}) {
-			my $histTarget = $process->{HistoryDir}."/".$histName."_".$cutOffExt.$ext;
+			my $histTarget = $process->{historyFolder}."/".$histName."_".$cutOffExt.$ext;
 			$logger->info("moving file $redoDir$_ into $histTarget");
 			rename $redoDir.$_, $histTarget or $logger->error("error when moving file $redoDir$_ into $histTarget: $!");
 			$execute{alreadyMovedOrDeleted}{$_} = 1;
