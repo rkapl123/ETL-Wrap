@@ -33,9 +33,9 @@ use ETL::Wrap; use Data::Dumper;
 @loads = (
 	{
 		DB => {
-			primkey => "Registerkonto = ? AND InhaberNummer = ?",
+			primkey => "ID1 = ? AND ID2 = ?",
 			keepContent => 1,
-			tablename => "BSKunden",
+			tablename => "TestTable",
 		},
 		File => {
 			dontKeepHistory => 1,
@@ -43,15 +43,14 @@ use ETL::Wrap; use Data::Dumper;
 			locale => "german",
 			format_sep => "\t",
 			format_skip => 2,
-			format_header => "Registerkonto	InhaberNummer	Name	Kapital",
-			firstLineProc => 'my ($repyear,$repmonth,$repday)=/Kundenreport per (\d{4})-(\d{2})-(\d{2})/i; $main::loads[0]{ReferenceDate} = sprintf("%04d%02d%02d",$repyear,$repmonth,$repday);',
+			format_header => "ID1	ID2	Name	Number",
 		}
 	},
 	{
 		DB => {
-			primkey => "Registerkonto = ? AND InhaberNummer = ?",
+			primkey => "ID1 = ? AND ID2 = ?",
 			keepContent => 1,
-			tablename => "BSKunden",
+			tablename => "TestTable",
 		},
 		File => {
 			dontKeepHistory => 1,
@@ -59,20 +58,10 @@ use ETL::Wrap; use Data::Dumper;
 			locale => "german",
 			format_sep => "\t",
 			format_skip => 2,
-			format_header => "Registerkonto	InhaberNummer	Name	Kapital",
-			firstLineProc => 'my ($repyear,$repmonth,$repday)=/Kundenreport per (\d{4})-(\d{2})-(\d{2})/i; $main::loads[0]{ReferenceDate} = sprintf("%04d%02d%02d",$repyear,$repmonth,$repday);',
+			format_header => "ID1	ID2	Name	Number",
 		}
 	},
 );
-$loads[0]{File}{lineCode} = <<'END';
-	$line{"Monatsletzter"} = 0;
-	my %linkedKapital;
-	$linkedKapital{"Registerkonto"} = $line{"Registerkonto"};
-	$linkedKapital{"InhaberNummer"} = $line{"InhaberNummer"};
-	$linkedKapital{"StichDatum"} = $main::loads[0]{ReferenceDate};
-	$linkedKapital{"Kapitalstand"} = $line{"Kapital"};
-	push @{$loads[0]{linkedKapital}}, \%linkedKapital;
-END
 
 ETL::Wrap::setupETLWrap();
 # ETL::Wrap::removeFilesinFolderOlderX(\%common);

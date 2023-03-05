@@ -14,7 +14,7 @@ sub readText {
 	my $logger = get_logger();
 	my @filenames = @{$filenames} if $filenames;
 	my $redoSubDir = $process->{redoDir}."/" if $process->{redoFile};
-	my $lineProcessing = $File->{LineCode};
+	my $lineProcessing = $File->{lineCode};
 	my $addtlProcessingTrigger = $File->{addtlProcessingTrigger};
 	my $addtlProcessing = $File->{addtlProcessing};
 	my $firstLineProc = $File->{firstLineProc};
@@ -226,7 +226,7 @@ sub readExcel {
 	$stoppedOnEmptyValue = 0; # reset
 	my @filenames = @{$filenames} if $filenames;
 	my $redoSubDir = $process->{redoDir}."/" if $process->{redoFile};
-	my $lineProcessing = $File->{LineCode};
+	my $lineProcessing = $File->{lineCode};
 	my $addtlProcessingTrigger = $File->{addtlProcessingTrigger};
 	my $addtlProcessing = $File->{addtlProcessing};
 	
@@ -354,7 +354,7 @@ sub readXML {
 	my $logger = get_logger();
 	my @filenames = @{$filenames} if $filenames;
 	my $redoSubDir = $process->{redoDir}."/" if $process->{redoFile};
-	my $lineProcessing = $File->{LineCode};
+	my $lineProcessing = $File->{lineCode};
 	my $addtlProcessingTrigger = $File->{addtlProcessingTrigger};
 	my $addtlProcessing = $File->{addtlProcessing};
 

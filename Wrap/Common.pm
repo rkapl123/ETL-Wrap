@@ -81,7 +81,7 @@ my %hashCheck = (
 		File => {}, # File specific configs
 		FTP => {}, # FTP specific configs
 		process => {}, # general processing configs
-	}
+	},
 	DB => {
 		addID => {},
 		additionalLookup => "",
@@ -192,6 +192,7 @@ my %hashCheck = (
 		hadDBErrors => 1,
 		historyFolder => "",
 		ignoreNoTest => 0,
+		interactive => "", #interactive flag, can also be used to pass arbitrary data via command line (eg a selected date for the run).
 		logFolder => "",
 		logRootPath => "",
 		plannedUntil => "2359",
