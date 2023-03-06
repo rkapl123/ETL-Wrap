@@ -276,7 +276,7 @@ sub login {
 	# for unstable connections, retry connecting max $maxConnectionTries.
 	my $connectionTries = 0;
 	# quote passwords containing chars that can't be passed via windows shell to ssh_cmd (\"....\>...\")
-	if ($^O =~ /MSWin/) {
+	if ($^O =~ /MSWin/ and !$FTP->{dontUseQuoteSystemForPwd}) {
 		$pwd = Win32::ShellQuote::quote_system($pwd) if ($pwd =~ /[()"<>&]/);
 	}
 	my $debugLevel = $FTP->{FTPdebugLevel};

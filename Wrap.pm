@@ -3,7 +3,7 @@ package ETL::Wrap;
 our $VERSION = '0.1';
 
 use strict;
-use Log::Log4perl qw(get_logger); use Log::Log4perl::Level; use Time::Local; use Time::localtime; use MIME::Lite; use Data::Dumper; use Module::Refresh; use Exporter;
+use Log::Log4perl qw(get_logger); use Log::Log4perl::Level; use Time::Local; use Time::localtime; use MIME::Lite; use Data::Dumper; use Module::Refresh; use Exporter; use File::Copy; use Cwd;
 # we make $ETL::Wrap::Common::common/config/execute/loads an alias for $ETL::Wrap::common/config/execute/loads so that the user can set it without knowing anything about the Common package!
 our %common;
 our %config;
@@ -165,8 +165,8 @@ sub redoFile {
 					rename $_, "$newName.$ext" or $logger->error("error renaming file $_ to $newName.$ext : $!");
 					$_ = "$newName.$ext";
 					s/^.*\///;
+					push @{$execute{retrievedFiles}}, $_;
 				}
-				$execute{redoFiles}{$_}=1;
 			}
 		}
 		extractArchives($arg) if ($File->{extract});
@@ -210,13 +210,13 @@ sub getFilesFromFTP {
 	my $logger = get_logger();
 	my ($FTP,$File,$process) = ETL::Wrap::Common::extractConfigs($arg,"FTP","File","process");
 	$logger->info("getFilesFromFTP");
+	@{$execute{retrievedFiles}} = (); # reset last retrieved, but this is also necessary to create the retrievedFiles hash entry for passing back the list from getFiles
+	@{$execute{filenames}} = (); # also reset last collected
 	if ($process->{redoFile}) {
 		redoFile($arg);
 	} else {
 		$logger->logdie("\$FTP{onlyDoFiletransferToLocalDir} given, but no \$FTP{localDir} set !") if !$FTP->{localDir} && $FTP->{onlyDoFiletransferToLocalDir};
-		$logger->logdie("\$FTP{onlyArchive} given, but no \$FTP{ArchiveFolder} set !") if !$FTP->{ArchiveFolder} && $FTP->{onlyArchive};
-		@{$execute{retrievedFiles}} = (); # reset last retrieved, but this is also necessary to create the retrievedFiles hash entry for passing back the list from getFiles
-		@{$execute{filenames}} = (); # also reset last collected
+		$logger->logdie("\$FTP{onlyArchive} given, but no \$FTP{archiveFolder} set !") if !$FTP->{archiveFolder} && $FTP->{onlyArchive};
 		if ($File->{filename} && !$FTP->{onlyArchive}) {
 			if (!ETL::Wrap::FTP::getFiles ($FTP,\%execute,{fileToRetrieve=>$File->{filename},fileToRetrieveOptional=>$File->{optional}})) {
 				$logger->error("error in fetching file from FTP") if !$execute{retryBecauseOfError};
@@ -242,10 +242,10 @@ sub checkFiles {
 	# check globs
 	if ($File->{filename} =~ /\*/) {
 		#  check files fetched with globs
-		if ($execute{retrievedFiles} && @{$execute{retrievedFiles}} > 1) {
+		if ($execute{retrievedFiles} and @{$execute{retrievedFiles}} > 1) {
 			for my $singleFilename (@{$execute{retrievedFiles}}) {
-				$logger->debug("checking file retrieved with mget: ".$singleFilename);
-				open (CHECKFILE, "<".$singleFilename) or $fileDoesntExist=1;
+				$logger->debug("checking file: ".$redoDir.$singleFilename);
+				open (CHECKFILE, "<".$redoDir.$singleFilename) or $fileDoesntExist=1;
 				close CHECKFILE;
 			}
 		} else {
@@ -253,7 +253,7 @@ sub checkFiles {
 		}
 	} else {
 		# check single file
-		$logger->debug("checking file ".$redoDir.$File->{filename});
+		$logger->debug("checking file: ".$redoDir.$File->{filename});
 		open (CHECKFILE, "<".$redoDir.$File->{filename}) or $fileDoesntExist=1;
 		close CHECKFILE;
 	}
@@ -276,25 +276,6 @@ sub checkFiles {
 	push @{$execute{filenames}}, @{$execute{retrievedFiles}} if $execute{retrievedFiles} && @{$execute{retrievedFiles}} > 0; # add the files retrieved with mget here.
 	push @{$execute{filesToRemove}}, @{$execute{filenames}} if $FTP->{fileToRemove};
 	push @{$execute{filesToArchive}}, @{$execute{filenames}} if $FTP->{fileToArchive};
-	# check, whether files or file globs exist when redoing
-	if ($process->{redoFile}) {
-		my $redoGlob = $File->{filename} if $File->{filename} =~ /\*/;
-		for my $aRedoFile (@{$execute{filenames}}) {
-			if (!$execute{redoFiles}{$aRedoFile}) {
-				$logger->warn("file ".$aRedoFile." not contained in redo files, therefore skipping in redo");
-				return 0;
-			}
-		}
-		if (!glob($redoDir.$redoGlob)) {
-			$logger->warn("no files exist in ".$redoDir.$redoGlob.", therefore skipping in redo");
-			return 0;
-		} else {
-			chdir($redoDir);
-			# resolve glob in redo folder and push into filenames to be processed
-			push @{$execute{filenames}}, glob("$redoGlob");
-			chdir($execute{homedir});
-		}
-	}
 	return 1;
 }
 
@@ -437,7 +418,7 @@ sub dumpDataIntoDB {
 		if ($File->{emptyOK}) {
 			$logger->warn("received empty file, will be ignored as \$File{emptyOK}=1");
 		} else {
-			$logger->error("error as one of the files didn't contain data: ".@{$execute{filenames}}." !");
+			$logger->error("error as one of the following files didn't contain data: @{$execute{filenames}} !");
 		}
 	}
 }
@@ -632,17 +613,17 @@ sub retrySleepAbort {
 	# hour part: including carry of minutes after adding additional minutes ($retrySeconds/60); * 100 for shifting 2 digits left
 	# minute part: integer rest from 60 of (original + additional)
 	my $nextStartTimeNum = ($hrs + int(($min+($retrySeconds/60))/60))*100 + (($min + ($retrySeconds/60))%60);
-	$execute{nextStartTime} = sprintf("%04d",$nextStartTimeNum);
+	my $nextStartTime = sprintf("%04d",$nextStartTimeNum);
 	my $currentTime = ETL::Wrap::DateUtil::get_curtime_HHMM();
 	my $endTime = $process->{plannedUntil};
 	$endTime = "0000->not set" if !$endTime;
-	if ($currentTime >= $endTime or ($execute{nextStartTime} =~ /24../)) {
-		$logger->info("finished processing due to time out: current time(".$currentTime.") >= endTime(".$endTime.") or nextStartTime(".$execute{nextStartTime}.") =~ /24../!");
+	if ($currentTime >= $endTime or ($nextStartTime =~ /24../)) {
+		$logger->info("finished processing due to time out: current time(".$currentTime.") >= endTime(".$endTime.") or nextStartTime(".$nextStartTime.") =~ /24../!");
 		moveFilesToHistory($execute{filesToMoveinHistory},$process) if $execute{filesToMoveinHistory};
 		deleteFiles($execute{filesToDelete},$process) if $execute{filesToDelete};
 	} else {
 		$logger->debug("execute:\n".Dumper(\%execute));
-		$logger->info("Retrying in ".$retrySeconds." seconds because of ".($execute{retryBecauseOfError} ? "occurred error" : "planned retry")." until ".$endTime.", next run: ".$execute{nextStartTime});
+		$logger->info("Retrying in ".$retrySeconds." seconds because of ".($execute{retryBecauseOfError} ? "occurred error" : "planned retry")." until ".$endTime.", next run: ".$nextStartTime);
 		sleep $retrySeconds;
 	}
 }
@@ -651,19 +632,20 @@ sub retrySleepAbort {
 sub moveFilesToHistory {
 	my ($filenames,$process) = @_;
 	my $logger = get_logger();
-	my $cutOffExt = ETL::Wrap::DateUtil::get_curdatetime();
+	my $cutOffDateTime = ETL::Wrap::DateUtil::get_curdatetime();
 	my $redoDir = $process->{redoDir}."/" if $process->{redoFile};
 	ETL::Wrap::Common::setErrSubject("lokale Archivierung/Bereinigung"); #
 	for (@$filenames) {
-		my ($histName, $ext) = /(.+)\.(.+?)$/;
-		# if done for redoDir, then add redo_<UserspecificFolder> to file histname (e.g. Filename_20190219_124409.txt becomes Filename_20190219_124409_redo_<username>_.txt)
+		my ($strippedName, $ext) = /(.+)\.(.+?)$/;
+		# if done from a redoDir, then add this folder to file (e.g. if done from redo/<username> then Filename_20190219_124409.txt becomes Filename_20190219_124409_redo_<username>_.txt)
+		my $cutOffSpec = $cutOffDateTime;
 		if ($redoDir) {
-			my $redoExt = $redoDir;
-			$redoExt =~ s/\//_/g;
-			$cutOffExt .= '_'.$redoExt;
+			my $redoSpec = $redoDir;
+			$redoSpec =~ s/\//_/g;
+			$cutOffSpec = $cutOffDateTime.'_'.$redoSpec;
 		}
 		if (!$execute{alreadyMovedOrDeleted}{$_}) {
-			my $histTarget = $process->{historyFolder}."/".$histName."_".$cutOffExt.$ext;
+			my $histTarget = $process->{historyFolder}."/".$strippedName."_".$cutOffSpec.".".$ext;
 			$logger->info("moving file $redoDir$_ into $histTarget");
 			rename $redoDir.$_, $histTarget or $logger->error("error when moving file $redoDir$_ into $histTarget: $!");
 			$execute{alreadyMovedOrDeleted}{$_} = 1;

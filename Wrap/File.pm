@@ -38,10 +38,10 @@ sub readText {
 	}
 	@header = split $sep, $File->{format_header} if $File->{format_header};
 	@targetheader = split $sep, $File->{format_targetheader} if $File->{format_targetheader};
+	@targetheader = @header if !@targetheader; # if no specific targetheader defined use header instead
 	$Data::Dumper::Terse = 1;
-	$logger->debug("skip:$skip,sep:".Data::Dumper::qquote($origsep).",header:@header\nsyncheader:@targetheader\nlineProcessing:".$File->{LineCode}."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing}."\nfirstLineProc:".$firstLineProc);
+	$logger->debug("skip:$skip,sep:".Data::Dumper::qquote($origsep).",header:@header\ntargetheader:@targetheader\nlineProcessing:".$File->{LineCode}."\naddtlProcessingTrigger:".$File->{addtlProcessingTrigger}."\naddtlProcessing:".$File->{addtlProcessing}."\nfirstLineProc:".$firstLineProc);
 	$Data::Dumper::Terse = 0;
-
 
 	# read all files with same format
 	for my $filename (@filenames) {
@@ -83,7 +83,7 @@ sub readText {
 			}
 			if ($skip) {
 				$skip-- if $firstLineProc; # if consumed already by firstLineProc skip one row less
-				$logger->debug("skip another $skip lines..");
+				$logger->debug("skipping ".($skip =~ /^\d+$/ ? " $skip lines" : "until line contains $skip (inclusive)"));
 				# skip first $skip rows in file (e.g. report header) if $skip is an integer, if $skip is non-integer, skip until the text $skip appears (inclusive)
 				if ($skip =~ /^\d+$/) {
 					for (1 .. $skip) {$_ = <FILE>};
@@ -123,7 +123,6 @@ LINE:
 						@line = split $sep;
 					}
 				}
-				$logger->trace("raw line: $rawline, line: ".Dumper(\@line)) if $logger->is_trace;
 				$lineno++;
 				next LINE if $line[0] eq "" and !$lineProcessing;
 				readRow($process,\@line,\@previousline,\@header,\@targetheader,$rawline,$lineProcessing,$addtlProcessingTrigger,$addtlProcessing,$File->{locale},$lineno);
@@ -428,6 +427,7 @@ sub readRow {
 	my @header = @$header;
 	my @targetheader = @$targetheader;
 	my $logger = get_logger();
+	$logger->trace("line: @{$line},previousline: @{$previousline},header: @{$header},targetheader: @{$targetheader},rawline: $rawline, lineProcessing: $lineProcessing, addtlProcessingTrigger: $addtlProcessingTrigger, addtlProcessing: $addtlProcessing,locale: $locale,lineno: $lineno") if $logger->is_trace;
 	
 	# if field is being replaced by a different name from targetheader, the data with the original name is placed in %templine (for further actions in $lineProcessing)
 	# the final value is put in $line{$targetheader}.

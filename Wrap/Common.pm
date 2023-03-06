@@ -27,9 +27,9 @@ my %hashCheck = (
 	},
 	config => {
 		checkLookup => {test => {errmailaddress => "",errmailsubject => "",timeToCheck =>, freqToCheck => "", logFileToCheck => "", logcheck => "",logRootPath =>""},},
-		errmailaddress => "",
-		errmailsubject => "",
-		fromaddress => "",
+		errmailaddress => "", # default mail address for central logcheck/errmail sending 
+		errmailsubject => "", # default mail subject for central logcheck/errmail sending 
+		fromaddress => "", # from address for central logcheck/errmail sending 
 		folderEnvironmentMapping => {Test => "Test", Dev => "Dev", "" => "Prod"},
 		logCheckHoliday => "",
 		logs_to_be_ignored_in_nonprod => '',
@@ -44,34 +44,30 @@ my %hashCheck = (
 		process => {},
 	},
 	execute=> {
-		additionalLookupData => {},
-		alreadyMovedOrDeleted => {},
-		archivefilenames => [],
-		dbh => {},
+		additionalLookupData => {}, # additional data retrieved from database with ETL::Wrap::getAdditionalDBData
+		alreadyMovedOrDeleted => {}, # hash for checking the already moved or deleted files, to avoid moving/deleting them again at cleanup
+		archivefilenames => [], # in case a zip archive package is retrieved, the filenames of these packages are kept here, necessary for cleanup at the end of the process
 		env => "", # Prod, Test, Dev, whatever
 		envraw => "", # Production has a special significance here as being the empty string (used for paths). Otherwise like env.
-		errmailaddress => "", # for central logcheck/errmail sending
-		errmailsubject => "", # for central logcheck/errmail sending
-		filesProcessed => {},
-		filesToArchive => [],
-		filesToDelete => [],
-		filesToMoveinHistory => [],
-		filenames => [],
-		filesToRemove => [],
-		firstRunSuccess => 1,
+		errmailaddress => "", # for central logcheck/errmail sending in current process
+		errmailsubject => "", # for central logcheck/errmail sending in current process
+		filesProcessed => {}, # hash for checking the processed files, necessary for cleanup at the end of the process
+		filesToArchive => [], # list of files to be moved in archiveFolder on FTP server, necessary for cleanup at the end of the process
+		filesToDelete => [], # list of files to be deleted on FTP server, necessary for cleanup at the end of the process
+		filesToMoveinHistory => [], # list of files to be moved in historyFolder locally, necessary for cleanup at the end of the process
+		filenames => [], # names of files that retrieved and checked to be locally available, can be more than the defined file in File->filename (due to glob spec or zip archive package)
+		filesToRemove => [], # list of files to be deleted locally, necessary for cleanup at the end of the process
+		firstRunSuccess => 1, # for planned retries (process=>plannedUntil filled) -> this is set after the first run to avoid error messages
 		freqToCheck => "", # for logchecker:  frequency to check entries (B,D,M,M1) ...
-		homedir => "",
+		homedir => "", # the home folder of the script, used to return from redo folders
 		logFileToCheck => "", # for logchecker: Logfile to be searched
 		logcheck => "", # for logchecker: the Logcheck (regex)
-		nextStartTime => "",
-		processEnd => 1,
-		processFail => 1,
-		redoFiles => {},
-		removeFiles => {},
-		retrievedFiles => {},
+		processEnd => 1, # specifies that the process is ended, checked in ETL::Wrap::processingEnd
+		processFail => 1, # specifies that the process has failed in getting files or storing into Database, currently not checked
+		retrievedFiles => [], # files retrieved from FTP or redo directory
 		retryBecauseOfError => 1, # retryBecauseOfError shows, if a rerun occurs due to errors (for successMail)
-		retrySeconds => 1,
-		scriptname => "",
+		retrySeconds => 60, # how many seconds are passed between retries. can be set with process=>retrySecondsErr or process=>retrySecondsPlanned
+		scriptname => "", # name of the current process script
 		timeToCheck => "", # for logchecker: scheduled time of job (don't look earlier for log entries)
 	},
 	load => {
@@ -84,8 +80,8 @@ my %hashCheck = (
 		addID => {},
 		additionalLookup => "",
 		additionalLookupKey => "",
-		columnnames => [],
 		cutoffYr2000 => 60,
+		columnnames => [],
 		database => "",
 		debugKeyIndicator => "",
 		deleteBeforeInsertSelector => "",
@@ -93,8 +89,8 @@ my %hashCheck = (
 		doUpdateBeforeInsert => 1,
 		DSNTrusted => '',
 		DSNUntrusted => '',
-		ignoreDuplicateErrs => 1,
 		incrementalStore => 1,
+		ignoreDuplicateErrs => 1,
 		isTrusted => 1,
 		keepContent => 1,
 		keyfield => "",
@@ -109,10 +105,9 @@ my %hashCheck = (
 		schemaName => "",
 		server => {Prod => "", Test => ""},
 		tablename => "",
+		updateIfInsertFails => 1,
 		upsert => 1,
 		useKeyForDeleteBeforeInsert => 1,
-		updateIfInsertFails => 1,
-		db => {user => "", pwd => ""},
 	},
 	File => {
 		addtlProcessingTrigger => "",
@@ -122,9 +117,9 @@ my %hashCheck = (
 		columnskip => {}, # for writeText: boolean hash of column names that should be skipped when writing the file ({column1ToSkip => 1, column2ToSkip => 1, ...})
 		customFile => "",
 		dontKeepHistory => 1, # if downloaded file should not be moved into historyFolder
-		emptyOK => 0,
-		encoding => "",
-		extract => 1,
+		emptyOK => 0, # flag to specify whether empty files should not invoke an error message. Also needed to mark an empty file as processed in ETL::Wrap::markProcessed
+		encoding => "", # text encoding of the file in question (e.g. :encoding(utf8))
+		extract => 1, # flag to specify whether to extract files from archive package (zip)
 		extension => "",
 		filename => "",
 		firstLineProc => '',
@@ -157,14 +152,14 @@ my %hashCheck = (
 	},
 	FTP => {
 		archiveFolder => "", # folder for archived files on the FTP server
-		dontMoveTempImmediately => 1, # if 0 oder missing: rename/move files immediately after writing to FTP to the final name, otherwise (1) a call to moveTempFiles is required to do that
+		dontMoveTempImmediately => 1, # if 0 oder missing: rename/move files immediately after writing to FTP to the final name, otherwise/1: a call to ETL::Wrap::FTP::moveTempFiles is required for that
 		dontDoSetStat => 1, # no setting of time stamp of remote file to that of local file (avoid error messages of FTP Server if it doesn't support this)
 		dontDoUtime => 1, # don't set time stamp of local file to that of remote file
-		dontUseQuoteSystemForPwd => 0,
+		dontUseQuoteSystemForPwd => 0, # for windows, a special quoting can be used for passwords with [()"<>& . This flag can be used to disable this quoting.
 		dontUseTempFile => 1, # directly upload files, without temp files
 		fileToArchive => 1,
 		fileToRemove => 1,
-		FTPdebugLevel => 0, # debug ftp: 0 or ~(1|2|4|8|16|1024|2048), loglevel automatically set to debug for module FTP
+		FTPdebugLevel => 0, # debug ftp: 0 or ~(1|2|4|8|16|1024|2048), loglevel automatically set to debug for module ETL::Wrap::FTP
 		hostkey => "",
 		localDir => "",
 		maxConnectionTries => 5,
@@ -172,7 +167,7 @@ my %hashCheck = (
 		onlyDoFiletransferToLocalDir => 1,
 		path => "", # relative FTP path (under remoteDir), where the file is to be found
 		plinkInstallationPath => "",
-		port => 22, # ftp/sftp port (leer lassen für default ports 21 (ftp) oder 22 (sftp)...): 5022
+		port => 22, # ftp/sftp port (leave empty for default ports 21 (ftp) or 22 (sftp)...): 5022
 		prefix => "ftp", # key for pwd and user in config{FTP}
 		privKey => "", # sftp key file location
 		queue_size => 1,
@@ -184,7 +179,6 @@ my %hashCheck = (
 		simulate => 0, # only simulate (1) or do actually (0)?
 		type => "", # (A)scii or (B)inary
 		user => "", # set user directly
-		ftpPre => {user => "", pwd => ""}, # set user/pwd for prefix ftpPre
 	},
 	process => {
 		cutOffExt => "",
@@ -192,13 +186,13 @@ my %hashCheck = (
 		hadDBErrors => 1,
 		historyFolder => "",
 		ignoreNoTest => 0,
-		interactive => "", #interactive flag, can also be used to pass arbitrary data via command line (eg a selected date for the run).
+		interactive => "", # interactive flag, can also be used to pass arbitrary data via command line (eg a selected date for the run).
 		logFolder => "",
 		logRootPath => "",
 		plannedUntil => "2359",
 		redoDir => "", # folder where files for redo are contained
 		redoFile => 1, # flag for specifying a redo
-		retrySecondsErr => 1,
+		retrySecondsErr => 60,
 		retrySecondsPlanned => 300,
 		skipHolidays => 0,
 		skipHolidaysDefault => "AT",
@@ -383,11 +377,11 @@ sub getOptions() {
 	}
 	Getopt::Long::GetOptions(%optiondefs);
 	# now correct strings to numeric where needed, also checking validity
+	my $errStr;
 	for my $hashName (@extConfig) {
 		for my $defkey (keys %{$opt{$hashName}}) {
-			my $errStr;
 			if (!exists($hashCheck{$hashName}{$defkey})) {
-				die("option not allowed: --$hashName $defkey=<value>");
+				$errStr.="option not allowed: --$hashName $defkey=<value>\n";
 			} else {
 				$opt{$hashName}{$defkey} = 0+$opt{$hashName}{$defkey} if looks_like_number($hashCheck{$hashName}{$defkey});
 			}
@@ -395,14 +389,22 @@ sub getOptions() {
 		for my $i (0..$#loads) {
 			next if $hashName eq "config"; # no config in loads...
 			for my $defkey (keys %{$optload[$i]{$hashName}}) {
-				my $errStr;
 				if (!exists($hashCheck{$hashName}{$defkey})) {
-					die("option not allowed: --load$i$hashName $defkey=<value>");
+					$errStr.="option not allowed: --load$i$hashName $defkey=<value>\n";
 				} else {
 					$optload[$i]{$hashName}{$defkey} = 0+$optload[$i]{$hashName}{$defkey} if looks_like_number($hashCheck{$hashName}{$defkey});
 				}
 			}
 		}
+	}
+	if ($errStr) {
+		my $availabeOpts;
+		for my $hashName (sort @extConfig) {
+			for my $defkey (sort keys %{$hashCheck{$hashName}}) {
+				$availabeOpts.="--$hashName $defkey=<value>\n" if ref($hashCheck{$hashName}{$defkey}) ne "HASH" and ref($hashCheck{$hashName}{$defkey}) ne "ARRAY";
+			}
+		}
+		die $errStr."===> available options (use --load<N><group> instead of --<group> for load specific settings):\n".$availabeOpts;
 	}
 }
 
