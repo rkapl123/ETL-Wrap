@@ -1,10 +1,12 @@
 use strict; use warnings; use Log::Log4perl qw(get_logger); use Log::Log4perl::Level; use Test::More; use Data::Dumper;
 use ETL::Wrap::File; use Test::Files; use File::Spec;
-use Test::More tests => 12; 
+use Test::More tests => 14; 
 
 Log::Log4perl::init("testlog.config");
 my $logger = get_logger();
 
+is(ETL::Wrap::File::normalizeNumerics("22.123.123,013","\\.","\\,"),"22123123.013",'normalizeNumericsThousandSep');
+is(ETL::Wrap::File::normalizeNumerics("123,01E-107","\\.","\\,"),"123.01E-107",'normalizeNumericsScientific');
 my ($expected_filecontent,$expected_datastruct,$File,$process);
 
 # write data to tab separated file

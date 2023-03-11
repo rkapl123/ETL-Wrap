@@ -125,7 +125,7 @@ LINE:
 				}
 				$lineno++;
 				next LINE if $line[0] eq "" and !$lineProcessing;
-				readRow($process,\@line,\@previousline,\@header,\@targetheader,$rawline,$lineProcessing,$addtlProcessingTrigger,$addtlProcessing,$File->{locale},$lineno);
+				readRow($process,\@line,\@previousline,\@header,\@targetheader,$rawline,$lineProcessing,$addtlProcessingTrigger,$addtlProcessing,$File->{thousandsep},$File->{decimalsep},$lineno);
 			}
 		}
 		close FILE;
@@ -334,7 +334,7 @@ LINE:
 			for (my $i = 0; $i < @header; $i++) {
 				$line[$i] = $dataRows{$lineno}{$header[$i]};
 			}
-			readRow($process,\@line,\@previousline,\@header,\@targetheader,undef,$lineProcessing,$addtlProcessingTrigger,$addtlProcessing,$File->{locale},$lineno);
+			readRow($process,\@line,\@previousline,\@header,\@targetheader,undef,$lineProcessing,$addtlProcessingTrigger,$addtlProcessing,$File->{thousandsep},$File->{decimalsep},$lineno);
 		}
 		close FILE;
 		if (scalar(@{$process->{data}}) == 0 and !$File->{emptyOK}) {
@@ -388,6 +388,7 @@ sub readXML {
 		$logger->trace("format_fieldXpath: ".Dumper($File->{format_fieldXpath})) if $logger->is_trace;
 		my @records = $xpc->findnodes($File->{format_xpathRecordLevel});
 		$logger->warn("no records found") if @records == 0;
+		$logger->trace("total document content: ".$xpc->getContextNode->toClarkML()) if $logger->is_trace;
 		# iterate through all rows of file
 		my $lineno = 0;
 		my (@line,@previousline);
@@ -396,20 +397,23 @@ sub readXML {
 			@line = undef;
 			# get @line from stored values
 			if (ref($record) eq "XML::LibXML::Element") {
+				$logger->trace("node content: ".$record->toClarkML()) if $logger->is_trace;
 				my @headerColumns = keys (%{$File->{format_fieldXpath}});
 				for (my $i = 0; $i < @headerColumns; $i++) {
 					$logger->trace("field:".$header[$i].",\$File->{format_fieldXpath}{".$header[$i]."}:".$File->{format_fieldXpath}{$header[$i]}) if $logger->is_trace;
 					if ($File->{format_fieldXpath}{$header[$i]} =~ /^\//) {
-						# absolute paths -> leave context node and find in the root doc (no context node argument).
+						# absolute paths -> leave context node and find in the root doc (no context node argument)
+						$logger->trace("absolute fieldXpath:".$File->{format_fieldXpath}{$header[$i]}) if $logger->is_trace;
 						$line[$i] = $xpc->findvalue($File->{format_fieldXpath}{$header[$i]});
 					} else {
 						# relative paths -> context node is current record node
+						$logger->trace("relative fieldXpath:".$File->{format_fieldXpath}{$header[$i]}) if $logger->is_trace;
 						$line[$i] = $xpc->findvalue($File->{format_fieldXpath}{$header[$i]}, $record);
 					}
 				}
 			}
 			$lineno++;
-			readRow($process,\@line,\@previousline,\@header,\@targetheader,undef,$lineProcessing,$addtlProcessingTrigger,$addtlProcessing,$File->{locale},$lineno);
+			readRow($process,\@line,\@previousline,\@header,\@targetheader,undef,$lineProcessing,$addtlProcessingTrigger,$addtlProcessing,$File->{thousandsep},$File->{decimalsep},$lineno);
 		}
 		if (!$process->{data} and !$File->{emptyOK}) {
 			$logger->error("empty file: $filename, no data returned");
@@ -419,16 +423,27 @@ sub readXML {
 	return 1;
 }
 
+		# remove thousand separators for numerals based on configured thousand/decimal separator and change decimal separator to \d+\.?\d*
+sub normalizeNumerics {
+	my ($number,$thousandsep,$decimalsep) = @_;
+	$number =~ s/$thousandsep//g if $number =~ /^-?\d{1,3}($thousandsep\d{3})+($decimalsep\d*)?$/;
+	if ($decimalsep ne "\\.") {
+		$number =~ s/$decimalsep/\./ if $number =~ /^-?\d+$decimalsep\d+$/ or $number =~ /^-*\d*$decimalsep?\d+E*[-+]*\d*$/;
+	}
+	return $number;
+}
+
 # read row into final line hash (including special "hook" code)
 sub readRow {
-	my ($process,$line,$previousline,$header,$targetheader,$rawline,$lineProcessing,$addtlProcessingTrigger,$addtlProcessing,$locale,$lineno) = @_;
+	my ($process,$line,$previousline,$header,$targetheader,$rawline,$lineProcessing,$addtlProcessingTrigger,$addtlProcessing,$thousandsep,$decimalsep,$lineno) = @_;
 	my @line = @$line;
 	my @previousline = @$previousline;
 	my @header = @$header;
 	my @targetheader = @$targetheader;
 	my $logger = get_logger();
-	$logger->trace("line: @{$line},previousline: @{$previousline},header: @{$header},targetheader: @{$targetheader},rawline: $rawline, lineProcessing: $lineProcessing, addtlProcessingTrigger: $addtlProcessingTrigger, addtlProcessing: $addtlProcessing,locale: $locale,lineno: $lineno") if $logger->is_trace;
-	
+	$thousandsep = "," if !$thousandsep; $decimalsep = "." if !$decimalsep;
+	$logger->trace("line: @{$line},previousline: @{$previousline},header: @{$header},targetheader: @{$targetheader},rawline: $rawline, lineProcessing: $lineProcessing, addtlProcessingTrigger: $addtlProcessingTrigger, addtlProcessing: $addtlProcessing,thousandsep: $thousandsep,decimalsep: $decimalsep,lineno: $lineno") if $logger->is_trace;
+	$thousandsep = "\\".$thousandsep; $decimalsep = "\\".$decimalsep;
 	# if field is being replaced by a different name from targetheader, the data with the original name is placed in %templine (for further actions in $lineProcessing)
 	# the final value is put in $line{$targetheader}.
 	# there is also data from the previous line (%previousline) and the previous temp line (%previoustempline).
@@ -438,11 +453,8 @@ sub readRow {
 		# first trim leading and trailing spaces
 		$line[$i] =~ s/^ *//;
 		$line[$i] =~ s/ *$//;
-		# remove thousand separators for numerals based on configured locale and change decimal separator to \d+\.?\d*
-		$line[$i] =~ s/\,//g if ($locale eq "english" and $line[$i] =~ /^-?\d{1,3}(\,\d{3})+(\.\d*)?$/);
-		$line[$i] =~ s/\.//g if ($locale eq "german" and $line[$i] =~ /^-?\d{1,3}(\.\d{3})+(\,\d*)?$/);
-		$line[$i] =~ s/\,/\./ if ($line[$i] =~ /^-?\d+\,\d+$/);
-
+		$line[$i] = normalizeNumerics($line[$i],$thousandsep,$decimalsep);
+		
 		# only process as targetheader, if they are not the same as the original header (allows special access to original header via $templine/$previoustempline)
 		if ($header[$i] ne $targetheader[$i]) {
 			# prevent autovivification of hash entries, if $i is potentially > @header or > @targetheader
