@@ -7,62 +7,62 @@ Log::Log4perl::init("testlog.config");
 my $logger = get_logger();
 
 ETL::Wrap::DB::newDBH("lenovo-pc","pubs",1) or $logger->logexit ("couldn't open DB connection");
-my $createStmt = "CREATE TABLE [dbo].[zsysTestTabelle]([Stichtag] [datetime] NOT NULL,[Buchungskreis] [varchar](4) NOT NULL,[Finanzgeschäft] [bigint] NOT NULL,[Produktart] [char](3) NOT NULL,[TeiltilgungLfdNr] [int] NOT NULL,	[Tilgungsbetrag] [decimal](28, 2) NOT NULL, CONSTRAINT [PK_zsysTestTabelle] PRIMARY KEY CLUSTERED (Stichtag ASC)) ON [PRIMARY]";
-is(ETL::Wrap::DB::doInDB($dbh,$createStmt),1,'doInDB');
+my $createStmt = "CREATE TABLE [dbo].[TestTabelle]([selDate] [datetime] NOT NULL,[ID0] [varchar](4) NOT NULL,[ID1] [bigint] NOT NULL,[ID2] [char](3) NOT NULL,[Number] [int] NOT NULL,	[Amount] [decimal](28, 2) NOT NULL, CONSTRAINT [PK_TestTabelle] PRIMARY KEY CLUSTERED (selDate ASC)) ON [PRIMARY]";
+is(ETL::Wrap::DB::doInDB($createStmt),1,'doInDB');
 my $data = [{
-             'Stichtag' => '20190619',
-             'Buchungskreis' => '58ZL',
-             'Finanzgeschäft' => 58000456,
-			 'Produktart' => 'ZSO',
-			 'TeiltilgungLfdNr' => 1,
-			 'Tilgungsbetrag' => 123456.12
+             'selDate' => '20190619',
+             'ID0' => 'ABCD',
+             'ID1' => 5456,
+			 'ID2' => 'ZYX',
+			 'Number' => 1,
+			 'Amount' => 123456.12
             },
             {
-             'Stichtag' => '20190619',
-             'Buchungskreis' => '58ZL',
-             'Finanzgeschäft' => 58000456,
-			 'Produktart' => 'ZSO',
-			 'TeiltilgungLfdNr' => 1,
-			 'Tilgungsbetrag' => 123456.12
+             'selDate' => '20190619',
+             'ID0' => 'ABCD',
+             'ID1' => 5856,
+			 'ID2' => 'XYY',
+			 'Number' => 1,
+			 'Amount' => 123456.12
             },
            ];
 # insert
-is(ETL::Wrap::DB::storeInDB($data,$dbh,"zsysTestTabelle","",1,"Stichtag = ?"),1,'storeInDB insert');
-# upsert
-is(ETL::Wrap::DB::storeInDB($data,$dbh,"zsysTestTabelle","",1,"Stichtag = ?"),1,'storeInDB upsert');
-# Syntax error
-is(ETL::Wrap::DB::storeInDB($data,$dbh,"zsysTestTabelle","",1,"Stich = ?"),0,'storeInDB error');
-# duplicate error
-is(ETL::Wrap::DB::storeInDB($data,$dbh,"zsysTestTabelle","",0,"Stichtag = ?"),0,'storeInDB duplicate error');
-#($data,$dbh,$tableName,$addID,$upsert,$primkey,$ignoreDuplicateErrs,$deleteBeforeInsertSelector,$incrementalStore,$doUpdateBeforeInsert,$debugKeyIndicator) = @_;
+is(ETL::Wrap::DB::storeInDB($data,"TestTabelle","",1,"selDate = ?"),1,'storeInDB insert');
+# upsert                          
+is(ETL::Wrap::DB::storeInDB($data,"TestTabelle","",1,"selDate = ?"),1,'storeInDB upsert');
+# Syntax error                    
+is(ETL::Wrap::DB::storeInDB($data,"TestTabelle","",1,"selDt = ?"),0,'storeInDB error');
+# duplicate error                 
+is(ETL::Wrap::DB::storeInDB($data,"TestTabelle","",0,"selDate = ?"),0,'storeInDB duplicate error');
+
 # Data error
 $data = [{
-             'Stichtag' => '20190620',
-             'Buchungskreis' => '58ZLZ_VielZuLange',
-             'Finanzgeschäft' => 58000456,
-			 'Produktart' => 'ZSO',
-			 'TeiltilgungLfdNr' => 1,
-			 'Tilgungsbetrag' => 123456.12
+             'selDate' => '20190620',
+             'ID0' => 'ABCD_WayTooLongField',
+             'ID1' => 5456,
+			 'ID2' => 'XZY',
+			 'Number' => 1,
+			 'Amount' => 123456.12
             }
            ];
-is(ETL::Wrap::DB::storeInDB($data,"zsysTestTabelle","",0,"Stichtag = ?",0,"",0,0,"Stichtag=? Finanzgeschäft=?"),0,'storeInDB Datenfehler');
+is(ETL::Wrap::DB::storeInDB($data,"TestTabelle","",0,"selDate = ?",0,"",0,0,"selDate=? ID1=?"),0,'storeInDB Datenfehler');
 # update in Database
 my $upddata = {'20190619' => {
-             'Stichtag' => '20190619',
-             'Buchungskreis' => '58ZL',
-             'Finanzgeschäft' => 58000456,
-			 'Produktart' => 'KSE',
-			 'TeiltilgungLfdNr' => 1,
-			 'Tilgungsbetrag' => 123456.12
+             'selDate' => '20190619',
+             'ID0' => 'ABCD',
+             'ID1' => 5856,
+			 'ID2' => 'XYZ',
+			 'Number' => 1,
+			 'Amount' => 123456.12
            }
          };
-is(ETL::Wrap::DB::updateInDB($upddata,"zsysTestTabelle","Stichtag = ?"),1,'updateInDB');
+is(ETL::Wrap::DB::updateInDB($upddata,"TestTabelle","selDate = ?"),1,'updateInDB');
 my @columnnames;
-my $query = "SELECT Stichtag,Buchungskreis,Finanzgeschäft,Produktart,TeiltilgungLfdNr,Tilgungsbetrag from dbo.zsysTestTabelle WHERE Stichtag = '20190619'";
-my $result = DButil::readFromDB($query,\@columnnames) or $logger->logexit ("konnte nicht aus Datenbank lesen ...");
-is($result->[0]{"TeiltilgungLfdNr"},1,'DButil::readFromDB');
-is("@columnnames","Stichtag Buchungskreis Finanzgeschäft Produktart TeiltilgungLfdNr Tilgungsbetrag","columnnames from readFromDB");
-DButil::doInDB("DROP TABLE [dbo].[zsysTestTabelle]");
+my $query = "SELECT selDate,ID0,ID1,ID2,Number,Amount from dbo.TestTabelle WHERE selDate = '20190619'";
+my $result = DButil::readFromDB($query,\@columnnames) or $logger->logexit ("couldn't read from Database");
+is($result->[0]{"Number"},1,'DButil::readFromDB');
+is("@columnnames","selDate ID0 ID1 ID2 Number Amount","columnnames from readFromDB");
+DButil::doInDB("DROP TABLE [dbo].[TestTabelle]");
 
 my @retvals;
 ETL::Wrap::DB::doInDB("sp_helpdb ?",\@retvals,"InfoDB");

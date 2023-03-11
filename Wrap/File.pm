@@ -125,7 +125,7 @@ LINE:
 				}
 				$lineno++;
 				next LINE if $line[0] eq "" and !$lineProcessing;
-				readRow($process,\@line,\@previousline,\@header,\@targetheader,$rawline,$lineProcessing,$addtlProcessingTrigger,$addtlProcessing,$File->{thousandsep},$File->{decimalsep},$lineno);
+				readRow($process,\@line,\@previousline,\@header,\@targetheader,$rawline,$lineProcessing,$addtlProcessingTrigger,$addtlProcessing,$File->{format_thousandsep},$File->{format_decimalsep},$lineno);
 			}
 		}
 		close FILE;
@@ -334,7 +334,7 @@ LINE:
 			for (my $i = 0; $i < @header; $i++) {
 				$line[$i] = $dataRows{$lineno}{$header[$i]};
 			}
-			readRow($process,\@line,\@previousline,\@header,\@targetheader,undef,$lineProcessing,$addtlProcessingTrigger,$addtlProcessing,$File->{thousandsep},$File->{decimalsep},$lineno);
+			readRow($process,\@line,\@previousline,\@header,\@targetheader,undef,$lineProcessing,$addtlProcessingTrigger,$addtlProcessing,$File->{format_thousandsep},$File->{format_decimalsep},$lineno);
 		}
 		close FILE;
 		if (scalar(@{$process->{data}}) == 0 and !$File->{emptyOK}) {
@@ -413,7 +413,7 @@ sub readXML {
 				}
 			}
 			$lineno++;
-			readRow($process,\@line,\@previousline,\@header,\@targetheader,undef,$lineProcessing,$addtlProcessingTrigger,$addtlProcessing,$File->{thousandsep},$File->{decimalsep},$lineno);
+			readRow($process,\@line,\@previousline,\@header,\@targetheader,undef,$lineProcessing,$addtlProcessingTrigger,$addtlProcessing,$File->{format_thousandsep},$File->{format_decimalsep},$lineno);
 		}
 		if (!$process->{data} and !$File->{emptyOK}) {
 			$logger->error("empty file: $filename, no data returned");
@@ -500,7 +500,6 @@ sub writeText {
 		$logger->error("passed data in \$process is not a ref to array:".Dumper($process));
 		return 0;
 	}
-	my $beforeHeader = $File->{beforeHeader};
 	# in case we need to print out csv/quoted values
 	my $sv = Text::CSV->new ({
 			binary    => 1,
@@ -549,7 +548,7 @@ sub writeText {
 		return 0;
 	};
 	# write header
-	print FHOUT $beforeHeader if $beforeHeader;
+	print FHOUT $File->{format_beforeHeader} if $File->{format_beforeHeader};
 	unless ($File->{format_suppressHeader}) {
 		if ($File->{format_quotedcsv}) {
 			if (!$sv->print(\*FHOUT, $headerRow)) {

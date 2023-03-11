@@ -200,6 +200,8 @@ sub getLocalFiles {
 				copy ($File->{localFilesystemPath}.$localfile, ".") or $logger->error("couldn't copy ".$File->{localFilesystemPath}.$localfile.": $!");
 			}
 			extractArchives($arg) if ($File->{extract});
+		} else {
+			$logger->error("no localFilesystemPath given in \$File parameter");
 		}
 	}
 }

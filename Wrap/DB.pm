@@ -14,9 +14,9 @@ sub newDBH {
 	my ($DB,$execute,$user,$pwd) = @_;
 	my $logger = get_logger();
 	my ($DSNeval, $newDSN);
-	$DSNeval = ($DB->{isTrusted} ? $DB->{DSNTrusted} : $DB->{DSNUntrusted});
+	$DSNeval = $DB->{DSN};
 	$newDSN = eval qq{"$DSNeval"};
-	$logger->error("error parsing \$DB->{".($DB->{isTrusted} ? "DSNTrusted" : "DSNUntrusted")."} (couldn't interpolate all values):".$DSNeval) if !$newDSN;
+	$logger->error("error parsing \$DB->{DSN}(".$DB->{DSN}.") (couldn't interpolate all values):".$DSNeval) if !$newDSN;
 	if ($DSN ne $newDSN or !defined($dbh)) {
 		$DSN = $newDSN;
 		$logger->debug("DSN: $DSN");
